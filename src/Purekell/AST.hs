@@ -60,6 +60,8 @@ data Expr
   | Where Expr [Binding]    -- ^ Where clause: expr where { pat = expr; ... }
   | Ann Expr Type           -- ^ Type annotation: expr :: Type
   | RecordUpdate Expr [(Name, Expr)]  -- ^ Record update: rec { field = val, ... }
+  | QVar [Name] Name   -- ^ Qualified variable: Data.Map.lookup
+  | QCon [Name] Name   -- ^ Qualified constructor: Data.Map.Map
   deriving (Eq, Show, Generic)
 
 data Pat
@@ -79,4 +81,5 @@ data Type
   | TyVar Name           -- ^ Type variable: a, b
   | TyApp Type Type      -- ^ Type application: Maybe a
   | TyFun Type Type      -- ^ Function type: a -> b
+  | TyQCon [Name] Name  -- ^ Qualified type constructor: Data.Map.Map
   deriving (Eq, Show, Generic)

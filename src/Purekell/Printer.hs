@@ -27,6 +27,11 @@ import Purekell.AST
 data Target = Haskell | PureScript
   deriving (Eq, Show)
 
+-- Qualified name helper
+
+printQual :: [Name] -> Text
+printQual ns = T.intercalate "." [m | Name m <- ns]
+
 -- Expression printer
 
 printExpr :: Target -> Expr -> Text
@@ -73,6 +78,8 @@ printExpr t (Ann e ty) =
 printExpr t (RecordUpdate e fields) =
   printAtom t e <> " { " <> T.intercalate ", " (map printField fields) <> " }"
   where printField (Name n, val) = n <> " = " <> printExpr t val
+printExpr _ (QVar qual (Name n)) = printQual qual <> "." <> n
+printExpr _ (QCon qual (Name n)) = printQual qual <> "." <> n
 
 -- Parenthesization helpers
 
@@ -157,6 +164,7 @@ printType (TyCon (Name n)) = n
 printType (TyVar (Name n)) = n
 printType (TyApp f x) = printTyAppFun f <> " " <> printTyAtom x
 printType (TyFun a b) = printTyFunArg a <> " -> " <> printType b
+printType (TyQCon qual (Name n)) = printQual qual <> "." <> n
 
 printTyAtom :: Type -> Text
 printTyAtom ty@(TyApp {}) = "(" <> printType ty <> ")"

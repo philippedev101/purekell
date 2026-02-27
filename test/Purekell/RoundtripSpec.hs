@@ -6,7 +6,7 @@ import Test.Hspec
 import Test.QuickCheck
 
 import Purekell.AST
-import Purekell.Arbitrary (noRecordAccess, noTuple, noTuplePat, noConsExpr, noConsPat)
+import Purekell.Arbitrary (noRecordAccess, noTuple, noTuplePat, noConsExpr, noConsPat, noQualClash)
 import Purekell.Codec (roundtrip, runParse, runPrint)
 import Purekell.Haskell (haskellExpr, haskellLit, haskellPat)
 import Purekell.PureScript (purescriptExpr, purescriptLit, purescriptPat)
@@ -28,7 +28,7 @@ spec = do
       it "lit roundtrips" $ property $ \lit ->
         roundtrip purescriptLit lit === Right (lit :: Lit)
 
-      it "expr roundtrips" $ property $ forAll (arbitrary `suchThat` (\e -> noTuple e && noConsExpr e)) $ \expr ->
+      it "expr roundtrips" $ property $ forAll (arbitrary `suchThat` (\e -> noTuple e && noConsExpr e && noQualClash e)) $ \expr ->
         roundtrip purescriptExpr expr === Right (expr :: Expr)
 
       it "pat roundtrips" $ property $ forAll (arbitrary `suchThat` (\p -> noTuplePat p && noConsPat p)) $ \pat ->
@@ -734,3 +734,116 @@ spec = do
         runParse haskellExpr "case rec { x = 1 } of { _ -> y }" `shouldBe`
           Right (Case (RecordUpdate (Var (Name "rec")) [(Name "x", Literal (IntLit 1))])
             [CaseAlt WildPat [] (Var (Name "y"))])
+
+    describe "Qualified names" $ do
+      -- Parse tests
+      it "parses Data.Map.lookup as QVar" $
+        runParse haskellExpr "Data.Map.lookup" `shouldBe`
+          Right (QVar [Name "Data", Name "Map"] (Name "lookup"))
+
+      it "parses Data.Map.Map as QCon" $
+        runParse haskellExpr "Data.Map.Map" `shouldBe`
+          Right (QCon [Name "Data", Name "Map"] (Name "Map"))
+
+      it "parses Foo.bar as QVar" $
+        runParse haskellExpr "Foo.bar" `shouldBe`
+          Right (QVar [Name "Foo"] (Name "bar"))
+
+      it "parses Foo.Bar as QCon" $
+        runParse haskellExpr "Foo.Bar" `shouldBe`
+          Right (QCon [Name "Foo"] (Name "Bar"))
+
+      it "parses Foo as Con (unchanged)" $
+        runParse haskellExpr "Foo" `shouldBe`
+          Right (Con (Name "Foo"))
+
+      -- Print tests
+      it "prints QVar" $
+        runPrint haskellExpr (QVar [Name "Data", Name "Map"] (Name "lookup"))
+          `shouldBe` "Data.Map.lookup"
+
+      it "prints QCon" $
+        runPrint haskellExpr (QCon [Name "Data", Name "Map"] (Name "Map"))
+          `shouldBe` "Data.Map.Map"
+
+      -- Roundtrip tests
+      it "QVar roundtrips in Haskell" $
+        let ast = QVar [Name "Data", Name "Map"] (Name "lookup")
+        in roundtrip haskellExpr ast `shouldBe` Right ast
+
+      it "QCon roundtrips in Haskell" $
+        let ast = QCon [Name "Data", Name "Map"] (Name "Map")
+        in roundtrip haskellExpr ast `shouldBe` Right ast
+
+      it "QVar roundtrips in PureScript" $
+        let ast = QVar [Name "Data", Name "Map"] (Name "lookup")
+        in roundtrip purescriptExpr ast `shouldBe` Right ast
+
+      it "QCon roundtrips in PureScript" $
+        let ast = QCon [Name "Data", Name "Map"] (Name "Map")
+        in roundtrip purescriptExpr ast `shouldBe` Right ast
+
+      it "cross-language roundtrips" $
+        let ast = QVar [Name "Data", Name "Map"] (Name "lookup")
+            hsText = runPrint haskellExpr ast
+        in case runParse purescriptExpr hsText of
+             Left err -> expectationFailure (show err)
+             Right psExpr ->
+               let psText = runPrint purescriptExpr psExpr
+               in runParse haskellExpr psText `shouldBe` Right ast
+
+      -- Context tests
+      it "Data.Map.lookup x parses as App (QVar ...) (Var x)" $
+        runParse haskellExpr "Data.Map.lookup x" `shouldBe`
+          Right (App (QVar [Name "Data", Name "Map"] (Name "lookup")) (Var (Name "x")))
+
+      it "x :: Data.Map.Map Int String parses with TyQCon" $
+        runParse haskellExpr "x :: Data.Map.Map Int String" `shouldBe`
+          Right (Ann (Var (Name "x"))
+            (TyApp (TyApp (TyQCon [Name "Data", Name "Map"] (Name "Map")) (TyCon (Name "Int"))) (TyCon (Name "String"))))
+
+      it "Foo.bar.baz in PS parses as RecordAccess (QVar ...) baz" $
+        runParse purescriptExpr "Foo.bar.baz" `shouldBe`
+          Right (RecordAccess (QVar [Name "Foo"] (Name "bar")) (Name "baz"))
+
+      it "rec.field in PS still parses as RecordAccess (Var rec) field" $
+        runParse purescriptExpr "rec.field" `shouldBe`
+          Right (RecordAccess (Var (Name "rec")) (Name "field"))
+
+      -- Edge cases
+      it "Foo . bar (spaces) is NOT qualified — it's infix . operator" $
+        runParse haskellExpr "Foo . bar" `shouldBe`
+          Right (InfixApp (Con (Name "Foo")) (Name ".") (Var (Name "bar")))
+
+      it "qualified in record update: Foo.Bar { x = 1 }" $
+        runParse haskellExpr "Foo.Bar { x = 1 }" `shouldBe`
+          Right (RecordUpdate (QCon [Name "Foo"] (Name "Bar")) [(Name "x", Literal (IntLit 1))])
+
+      it "qualified type roundtrips: TyQCon" $
+        let ast = Ann (Var (Name "x")) (TyQCon [Name "Data", Name "Map"] (Name "Map"))
+        in roundtrip haskellExpr ast `shouldBe` Right ast
+
+      it "QCon cross-language roundtrips" $
+        let ast = QCon [Name "Data", Name "Map"] (Name "Map")
+            hsText = runPrint haskellExpr ast
+        in case runParse purescriptExpr hsText of
+             Left err -> expectationFailure (show err)
+             Right psExpr ->
+               let psText = runPrint purescriptExpr psExpr
+               in runParse haskellExpr psText `shouldBe` Right ast
+
+      it "reserved word after dot is NOT qualified: Foo.case" $
+        -- Foo.case should parse as Con "Foo", then fail or parse "case" as keyword
+        -- It should NOT parse as QVar ["Foo"] "case"
+        case runParse haskellExpr "Foo.case" of
+          Right (QVar _ _) -> expectationFailure "should not parse as QVar"
+          _ -> pure ()
+
+      it "qualified in application context: Data.Map.insert k v" $
+        runParse haskellExpr "Data.Map.insert k v" `shouldBe`
+          Right (App (App (QVar [Name "Data", Name "Map"] (Name "insert")) (Var (Name "k"))) (Var (Name "v")))
+
+      it "multiple qualified names in expression" $
+        runParse haskellExpr "Data.Map.insert k v Data.Map.empty" `shouldBe`
+          Right (App (App (App (QVar [Name "Data", Name "Map"] (Name "insert")) (Var (Name "k"))) (Var (Name "v")))
+            (QVar [Name "Data", Name "Map"] (Name "empty")))

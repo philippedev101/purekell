@@ -9,6 +9,7 @@ module Purekell.Arbitrary
   , noTuplePat
   , noConsExpr
   , noConsPat
+  , noQualClash
   ) where
 
 import Data.Text (Text)
@@ -38,6 +39,12 @@ genUpperIdent = do
   cs <- listOf (elements $ ['a'..'z'] ++ ['A'..'Z'] ++ ['0'..'9'] ++ ['_'])
   pure (T.pack (c : cs))
 
+-- | Generate a qualifier (1-2 uppercase components)
+genQualifier :: Gen [Name]
+genQualifier = do
+  n <- choose (1, 2)
+  vectorOf n (Name <$> genUpperIdent)
+
 -- | Generate a valid operator name
 genOperator :: Gen Name
 genOperator = Name <$> elements
@@ -46,7 +53,11 @@ genOperator = Name <$> elements
 instance Arbitrary Type where
   arbitrary = sized go
     where
-      go 0 = oneof [TyCon . Name <$> genUpperIdent, TyVar <$> arbitrary]
+      go 0 = oneof
+        [ TyCon . Name <$> genUpperIdent
+        , TyVar <$> arbitrary
+        , TyQCon <$> genQualifier <*> (Name <$> genUpperIdent)
+        ]
       go n = oneof
         [ go 0
         , TyApp <$> go (n `div` 2) <*> go (n `div` 2)
@@ -54,6 +65,8 @@ instance Arbitrary Type where
         ]
   shrink (TyApp f x) = [f, x]
   shrink (TyFun a b) = [a, b]
+  shrink (TyQCon [_] n) = [TyCon n]
+  shrink (TyQCon qs n) = [TyQCon (drop 1 qs) n]
   shrink _ = []
 
 instance Arbitrary Name where
@@ -108,6 +121,8 @@ instance Arbitrary Expr where
         [ Literal <$> arbitrary
         , Var <$> arbitrary
         , Con . Name <$> genUpperIdent
+        , QVar <$> genQualifier <*> arbitrary
+        , QCon <$> genQualifier <*> (Name <$> genUpperIdent)
         ]
       go n = frequency
         [ (3, go 0)
@@ -145,6 +160,8 @@ instance Arbitrary Expr where
         , (1, do numFields <- choose (1, 2)
                  fields <- vectorOf numFields ((,) <$> (Name <$> genIdent) <*> go (n `div` (numFields + 1)))
                  RecordUpdate <$> go half <*> pure fields)
+        , (1, QVar <$> genQualifier <*> arbitrary)
+        , (1, QCon <$> genQualifier <*> (Name <$> genUpperIdent))
         ]
         where
           half = n `div` 2
@@ -166,6 +183,10 @@ instance Arbitrary Expr where
   shrink (Where e bs) = [e] ++ [Where e bs' | bs' <- shrinkList shrink bs, not (null bs')]
   shrink (Ann e _) = [e]
   shrink (RecordUpdate e _) = [e]
+  shrink (QVar [_] n) = [Var n]
+  shrink (QVar qs n) = [QVar (drop 1 qs) n]
+  shrink (QCon [_] n) = [Con n]
+  shrink (QCon qs n) = [QCon (drop 1 qs) n]
   shrink _ = []
 
 instance Arbitrary Pat where
@@ -316,6 +337,36 @@ noConsPat (ListPat ps) = all noConsPat ps
 noConsPat (AsPat _ p) = noConsPat p
 noConsPat (NegLitPat _) = True
 noConsPat _ = True
+
+-- | Check recursively that no RecordAccess has a Con or QCon as its base.
+-- RecordAccess (Con "Foo") "bar" prints as Foo.bar which re-parses as QVar.
+noQualClash :: Expr -> Bool
+noQualClash (RecordAccess (Con _) _) = False
+noQualClash (RecordAccess (QCon _ _) _) = False
+noQualClash (Neg e) = noQualClash e
+noQualClash (RecordAccess e _) = noQualClash e
+noQualClash (App f x) = noQualClash f && noQualClash x
+noQualClash (InfixApp l _ r) = noQualClash l && noQualClash r
+noQualClash (Lam _ e) = noQualClash e
+noQualClash (If c t e) = noQualClash c && noQualClash t && noQualClash e
+noQualClash (Case scrut alts) = noQualClash scrut && all altOk alts
+  where altOk (CaseAlt _ gs e) = all guardOk gs && noQualClash e
+        guardOk (Guard e) = noQualClash e
+noQualClash (Let bs e) = all bindOk bs && noQualClash e
+  where bindOk (Binding _ e') = noQualClash e'
+noQualClash (Do stmts) = all stmtOk stmts
+  where stmtOk (StmtBind _ e) = noQualClash e
+        stmtOk (StmtExpr e) = noQualClash e
+        stmtOk (StmtLet bs) = all (\(Binding _ e) -> noQualClash e) bs
+noQualClash (Tuple es) = all noQualClash es
+noQualClash (ListLit es) = all noQualClash es
+noQualClash (LeftSection e _) = noQualClash e
+noQualClash (RightSection _ e) = noQualClash e
+noQualClash (Where e bs) = noQualClash e && all bindOk bs
+  where bindOk (Binding _ e') = noQualClash e'
+noQualClash (Ann e _) = noQualClash e
+noQualClash (RecordUpdate e fields) = noQualClash e && all (\(_, v) -> noQualClash v) fields
+noQualClash _ = True
 
 instance Arbitrary MethodEquation where
   arbitrary = sized $ \n -> do

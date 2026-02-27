@@ -206,6 +206,23 @@ spec = do
                    (RecordUpdate (Var (Name "x")) [(Name "y", Literal (IntLit 1))])
         printMethodBody PureScript [eq] `shouldBe` "f x = x { y = 1 }"
 
+    describe "Qualified names in methods" $ do
+      it "method with qualified variable" $ do
+        let input = "f x = Data.Map.lookup x m"
+        case parseMethodBody input of
+          Left err -> expectationFailure (show err)
+          Right eqs -> do
+            printMethodBody Haskell eqs `shouldBe` input
+            printMethodBody PureScript eqs `shouldBe` input
+
+      it "method with qualified constructor" $ do
+        let input = "f x = Data.Map.Map x"
+        case parseMethodBody input of
+          Left err -> expectationFailure (show err)
+          Right eqs -> do
+            printMethodBody Haskell eqs `shouldBe` input
+            printMethodBody PureScript eqs `shouldBe` input
+
     describe "Roundtrip" $ do
       let noRA (MethodEquation _ _ gs body) =
             noRecordAccess body && all (\(Guard e) -> noRecordAccess e) gs

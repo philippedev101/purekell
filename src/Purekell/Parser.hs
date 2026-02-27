@@ -74,6 +74,46 @@ pUpperName = lexeme $ do
   cs <- many (alphaNumChar <|> char '_' <|> char '\'')
   pure (Name (T.pack (c : cs)))
 
+-- Raw name parsers (no trailing whitespace, for qualified name components)
+
+pRawUpperIdent :: Parser Text
+pRawUpperIdent = do
+  c <- upperChar
+  cs <- many (alphaNumChar <|> char '_' <|> char '\'')
+  pure (T.pack (c : cs))
+
+pRawLowerIdent :: Parser Text
+pRawLowerIdent = try $ do
+  c <- lowerChar <|> char '_'
+  cs <- many (alphaNumChar <|> char '_' <|> char '\'')
+  let n = T.pack (c : cs)
+  if n `elem` reserved then fail ("reserved: " ++ T.unpack n) else pure n
+  where
+    reserved = ["case", "of", "let", "in", "where", "do", "if", "then", "else", "_"]
+
+-- Qualified name parsers
+
+pQualifiedOrCon :: Parser Expr
+pQualifiedOrCon = lexeme $ do
+  first <- pRawUpperIdent
+  rest <- many (try (char '.' *> pRawUpperIdent))
+  mLower <- optional (try (char '.' *> pRawLowerIdent))
+  let allUpper = first : rest
+  case mLower of
+    Just low -> pure (QVar (map Name allUpper) (Name low))
+    Nothing  -> case allUpper of
+      [one] -> pure (Con (Name one))
+      _     -> pure (QCon (map Name (init allUpper)) (Name (last allUpper)))
+
+pQualifiedOrTyCon :: Parser Type
+pQualifiedOrTyCon = lexeme $ do
+  first <- pRawUpperIdent
+  rest <- many (try (char '.' *> pRawUpperIdent))
+  let allUpper = first : rest
+  case allUpper of
+    [one] -> pure (TyCon (Name one))
+    _     -> pure (TyQCon (map Name (init allUpper)) (Name (last allUpper)))
+
 pOperator :: Parser Name
 pOperator = lexeme $ try $ do
   op <- some (oneOf ("!#$%&*+./<=>?@\\^|-~:" :: [Char]))
@@ -148,7 +188,7 @@ pTyApp = do
 
 pTyAtom :: Parser Type
 pTyAtom = choice
-  [ TyCon <$> pUpperName
+  [ pQualifiedOrTyCon
   , TyVar <$> pLowerName
   , symbol "(" *> pType <* symbol ")"
   ]
@@ -171,7 +211,7 @@ mkExprParsers postfix = ExprParsers { epExpr = expr, epGuard = guard }
   where
     atom = choice
       [ Literal <$> pLit
-      , Con <$> pUpperName
+      , pQualifiedOrCon
       , Var <$> pLowerName
       , pParenOrTupleOrSection
       , pList

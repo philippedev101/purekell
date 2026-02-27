@@ -51,3 +51,5 @@ spec = do
           Where {} -> True
           Ann {} -> True
           RecordUpdate {} -> True
+          QVar {} -> True
+          QCon {} -> True
