@@ -86,6 +86,39 @@ spec = do
             -- Same syntax in both languages with <>
             printMethodBody PureScript eqs `shouldBe` "show (MkId x) = \"MkId \" <> show x"
 
+    describe "Tuple in instance methods" $ do
+      it "Haskell prints tuple in method body" $ do
+        let eq = MethodEquation (Name "toPair") [ConPat (Name "MkT") [VarPat (Name "x"), VarPat (Name "y")]] []
+                   (Tuple [Var (Name "x"), Var (Name "y")])
+        printMethodBody Haskell [eq] `shouldBe` "toPair (MkT x y) = (x, y)"
+
+      it "PureScript prints tuple in method body" $ do
+        let eq = MethodEquation (Name "toPair") [ConPat (Name "MkT") [VarPat (Name "x"), VarPat (Name "y")]] []
+                   (Tuple [Var (Name "x"), Var (Name "y")])
+        printMethodBody PureScript [eq] `shouldBe` "toPair (MkT x y) = Tuple x y"
+
+      it "Haskell prints tuple pattern in method args" $ do
+        let eq = MethodEquation (Name "fst'") [TuplePat [VarPat (Name "a"), VarPat (Name "b")]] []
+                   (Var (Name "a"))
+        printMethodBody Haskell [eq] `shouldBe` "fst' (a, b) = a"
+
+      it "PureScript prints tuple pattern in method args" $ do
+        let eq = MethodEquation (Name "fst'") [TuplePat [VarPat (Name "a"), VarPat (Name "b")]] []
+                   (Var (Name "a"))
+        printMethodBody PureScript [eq] `shouldBe` "fst' (Tuple a b) = a"
+
+      it "Haskell tuple in method body roundtrips" $ do
+        let input = "toPair (MkT x y) = (x, y)"
+        case parseMethodBody input of
+          Left err -> expectationFailure (show err)
+          Right eqs -> printMethodBody Haskell eqs `shouldBe` input
+
+      it "Haskell tuple pattern in method args roundtrips" $ do
+        let input = "fst' (a, b) = a"
+        case parseMethodBody input of
+          Left err -> expectationFailure (show err)
+          Right eqs -> printMethodBody Haskell eqs `shouldBe` input
+
     describe "Roundtrip" $ do
       let noRA (MethodEquation _ _ gs body) =
             noRecordAccess body && all (\(Guard e) -> noRecordAccess e) gs

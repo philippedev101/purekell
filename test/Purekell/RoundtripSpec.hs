@@ -137,6 +137,37 @@ spec = do
                     [CaseAlt (TuplePat [VarPat (Name "a"), VarPat (Name "b")]) [] (Var (Name "a"))]
         in roundtrip haskellExpr ast `shouldBe` Right ast
 
+      it "parses complex expressions inside tuple" $
+        runParse haskellExpr "(a + b, f c)" `shouldBe`
+          Right (Tuple
+            [ InfixApp (Var (Name "a")) (Name "+") (Var (Name "b"))
+            , App (Var (Name "f")) (Var (Name "c"))
+            ])
+
+      it "prints complex expressions inside tuple" $
+        runPrint haskellExpr (Tuple
+            [ InfixApp (Var (Name "a")) (Name "+") (Var (Name "b"))
+            , App (Var (Name "f")) (Var (Name "c"))
+            ])
+          `shouldBe` "(a + b, f c)"
+
+      it "roundtrips complex expressions inside tuple" $
+        let ast = Tuple
+              [ InfixApp (Var (Name "a")) (Name "+") (Var (Name "b"))
+              , App (Var (Name "f")) (Var (Name "c"))
+              ]
+        in roundtrip haskellExpr ast `shouldBe` Right ast
+
+      it "Haskell tuple as function argument" $
+        let ast = App (Var (Name "f")) (Tuple [Var (Name "a"), Var (Name "b")])
+        in do
+          runPrint haskellExpr ast `shouldBe` "f (a, b)"
+          roundtrip haskellExpr ast `shouldBe` Right ast
+
+      it "PureScript tuple as function argument gets parens" $
+        let ast = App (Var (Name "f")) (Tuple [Var (Name "a"), Var (Name "b")])
+        in runPrint purescriptExpr ast `shouldBe` "f (Tuple a b)"
+
     describe "Cross-language" $ do
       it "Haskell pat -> PureScript pat -> Haskell pat" $ property $ forAll (arbitrary `suchThat` noTuplePat) $ \pat ->
         let hsText = runPrint haskellPat (pat :: Pat)

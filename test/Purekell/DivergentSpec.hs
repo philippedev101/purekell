@@ -213,3 +213,20 @@ spec = do
         it "Haskell roundtrips preserve the distinction" $ do
           runParse haskellPat "(a, b, c)" `shouldBe` Right triple
           runParse haskellPat "(a, (b, c))" `shouldBe` Right nested
+
+    describe "Tuple cross-language one-way translation" $ do
+      it "HS Tuple -> PS text -> PS parse gives App/Con, not Tuple" $ do
+        let ast = Tuple [Var (Name "a"), Var (Name "b")]
+            psText = runPrint purescriptExpr ast
+        psText `shouldBe` "Tuple a b"
+        -- Parsing this back gives constructor application, not Tuple node
+        runParse purescriptExpr psText `shouldBe`
+          Right (App (App (Con (Name "Tuple")) (Var (Name "a"))) (Var (Name "b")))
+
+      it "HS TuplePat -> PS text -> PS parse gives ConPat, not TuplePat" $ do
+        let ast = TuplePat [VarPat (Name "x"), VarPat (Name "y")]
+            psText = runPrint purescriptPat ast
+        psText `shouldBe` "Tuple x y"
+        -- Parsing this back gives constructor pattern, not TuplePat node
+        runParse purescriptPat psText `shouldBe`
+          Right (ConPat (Name "Tuple") [VarPat (Name "x"), VarPat (Name "y")])
