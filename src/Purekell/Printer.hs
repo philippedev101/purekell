@@ -61,12 +61,21 @@ printExpr PureScript (Tuple (a : rest)) =
   "Tuple " <> printAtom PureScript a <> " " <> printAtom PureScript (Tuple rest)
 printExpr PureScript (Tuple []) =
   error "Tuple must have at least 2 elements"
+printExpr _ (ListLit []) = "[]"
+printExpr t (ListLit es) = "[" <> T.intercalate ", " (map (printExpr t) es) <> "]"
+printExpr t (LeftSection e (Name op)) = "(" <> printInfixArg t e <> " " <> op <> ")"
+printExpr t (RightSection (Name op) e) = "(" <> op <> " " <> printInfixArg t e <> ")"
+printExpr t (Where e bs) =
+  printInfixLevel t e <> " where { " <> T.intercalate "; " (map (printBinding t) bs) <> " }"
 
 -- Parenthesization helpers
 
 isCompound :: Target -> Expr -> Bool
 isCompound Haskell    (Tuple {}) = False
 isCompound PureScript (Tuple {}) = True
+isCompound _ (ListLit {}) = False
+isCompound _ (LeftSection {}) = False
+isCompound _ (RightSection {}) = False
 isCompound _ (Neg {})  = True
 isCompound Haskell    (RecordAccess {}) = True
 isCompound PureScript (RecordAccess {}) = False
@@ -77,6 +86,7 @@ isCompound _ (If {})       = True
 isCompound _ (Case {})     = True
 isCompound _ (Let {})      = True
 isCompound _ (Do {})       = True
+isCompound _ (Where {})    = True
 isCompound _ _             = False
 
 printAtom :: Target -> Expr -> Text
@@ -97,6 +107,7 @@ printInfixArg t e@(If {})       = "(" <> printExpr t e <> ")"
 printInfixArg t e@(Case {})     = "(" <> printExpr t e <> ")"
 printInfixArg t e@(Let {})      = "(" <> printExpr t e <> ")"
 printInfixArg t e@(Do {})       = "(" <> printExpr t e <> ")"
+printInfixArg t e@(Where {})    = "(" <> printExpr t e <> ")"
 printInfixArg t e               = printExpr t e
 
 printInfixLevel :: Target -> Expr -> Text
@@ -105,6 +116,7 @@ printInfixLevel t e@(If {})   = "(" <> printExpr t e <> ")"
 printInfixLevel t e@(Case {}) = "(" <> printExpr t e <> ")"
 printInfixLevel t e@(Let {})  = "(" <> printExpr t e <> ")"
 printInfixLevel t e@(Do {})   = "(" <> printExpr t e <> ")"
+printInfixLevel t e@(Where {}) = "(" <> printExpr t e <> ")"
 printInfixLevel t e           = printExpr t e
 
 -- Guard / case alt / binding / stmt printers
@@ -169,10 +181,19 @@ printPat PureScript (TuplePat (a : rest)) =
   "Tuple " <> printPatAtom PureScript a <> " " <> printPatAtom PureScript (TuplePat rest)
 printPat PureScript (TuplePat []) =
   error "TuplePat must have at least 2 elements"
+printPat _ (ListPat []) = "[]"
+printPat t (ListPat ps) = "[" <> T.intercalate ", " (map (printPat t) ps) <> "]"
+printPat Haskell (ConsPat l r) = printPatAtom Haskell l <> " : " <> printPat Haskell r
+printPat PureScript (ConsPat l r) = "Cons " <> printPatAtom PureScript l <> " " <> printPatAtom PureScript r
+printPat t (AsPat (Name n) p) = n <> "@" <> printPatAtom t p
+printPat _ (NegLitPat l) = "-" <> printLit l
 
 printPatAtom :: Target -> Pat -> Text
 printPatAtom t p@(ConPat _ (_:_)) = "(" <> printPat t p <> ")"
 printPatAtom t p@(TuplePat _) = case t of
   Haskell    -> printPat t p  -- already parenthesized
   PureScript -> "(" <> printPat t p <> ")"
+printPatAtom t p@(ConsPat _ _) = "(" <> printPat t p <> ")"
+printPatAtom t p@(AsPat _ _) = "(" <> printPat t p <> ")"
+printPatAtom t p@(NegLitPat _) = "(" <> printPat t p <> ")"
 printPatAtom t p = printPat t p

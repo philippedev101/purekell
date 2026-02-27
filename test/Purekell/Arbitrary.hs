@@ -7,6 +7,8 @@ module Purekell.Arbitrary
   , noRecordAccess
   , noTuple
   , noTuplePat
+  , noConsExpr
+  , noConsPat
   ) where
 
 import Data.Text (Text)
@@ -118,7 +120,14 @@ instance Arbitrary Expr where
         , (1, RecordAccess <$> go half <*> (Name <$> genIdent))
         , (1, do numElems <- choose (2, 3)
                  Tuple <$> vectorOf numElems (go (n `div` (numElems + 1))))
-
+        , (1, do numElems <- choose (0, 3)
+                 ListLit <$> vectorOf numElems (go (n `div` (numElems + 1))))
+        , (1, LeftSection <$> go half <*> genOperator)
+        , (1, RightSection <$> genOperator <*> go half)
+        , (1, do numBinds <- choose (1, 2)
+                 bindings <- vectorOf numBinds (resize half arbitrary)
+                 body <- go half
+                 pure (Where body bindings))
         ]
         where
           half = n `div` 2
@@ -134,6 +143,10 @@ instance Arbitrary Expr where
   shrink (Neg e) = e : [Neg e' | e' <- shrink e]
   shrink (RecordAccess rec _) = [rec]
   shrink (Tuple es) = es
+  shrink (ListLit es) = es ++ [ListLit es' | es' <- shrinkList shrink es]
+  shrink (LeftSection e _) = [e]
+  shrink (RightSection _ e) = [e]
+  shrink (Where e bs) = [e] ++ [Where e bs' | bs' <- shrinkList shrink bs, not (null bs')]
   shrink _ = []
 
 instance Arbitrary Pat where
@@ -153,11 +166,23 @@ instance Arbitrary Pat where
              pure (ConPat con args)
         , do numElems <- choose (2, 3)
              TuplePat <$> vectorOf numElems (go (n `div` (numElems + 1)))
+        , do numElems <- choose (0, 3)
+             ListPat <$> vectorOf numElems (go (n `div` (numElems + 1)))
+        , ConsPat <$> go (n `div` 2) <*> go (n `div` 2)
+        , AsPat <$> arbitrary <*> go (n `div` 2)
+        , NegLitPat <$> oneof
+            [ IntLit . getNonNegative <$> arbitrary
+            , FloatLit <$> (getNonNegative <$> arbitrary) `suchThat` (\d -> not (isNaN d) && not (isInfinite d))
+            ]
         ]
 
   shrink (ConPat n args) = [ConPat n (take i args) | i <- [0 .. length args - 1]]
                         ++ [ConPat n args' | args' <- shrinkList shrink args]
   shrink (TuplePat ps) = ps ++ [TuplePat ps' | ps' <- shrinkList shrink ps, length ps' >= 2]
+  shrink (ListPat ps) = ps ++ [ListPat ps' | ps' <- shrinkList shrink ps]
+  shrink (ConsPat l r) = [l, r] ++ [ConsPat l' r | l' <- shrink l] ++ [ConsPat l r' | r' <- shrink r]
+  shrink (AsPat _ p) = [p]
+  shrink (NegLitPat l) = [LitPat l]
   shrink _ = []
 
 -- | Check recursively that an expression tree contains no RecordAccess.
@@ -180,7 +205,20 @@ noRecordAccess (Do stmts) = all stmtOk stmts
         stmtOk (StmtExpr e) = noRecordAccess e
         stmtOk (StmtLet bs) = all (\(Binding _ e) -> noRecordAccess e) bs
 noRecordAccess (Tuple es) = all noRecordAccess es
+noRecordAccess (ListLit es) = all noRecordAccess es
+noRecordAccess (LeftSection e _) = noRecordAccess e
+noRecordAccess (RightSection _ e) = noRecordAccess e
+noRecordAccess (Where e bs) = noRecordAccess e && all bindOk bs
+  where bindOk (Binding p e') = noRecordAccessPat p && noRecordAccess e'
 noRecordAccess _ = True
+
+noRecordAccessPat :: Pat -> Bool
+noRecordAccessPat (ConPat _ args) = all noRecordAccessPat args
+noRecordAccessPat (TuplePat ps) = all noRecordAccessPat ps
+noRecordAccessPat (ListPat ps) = all noRecordAccessPat ps
+noRecordAccessPat (ConsPat l r) = noRecordAccessPat l && noRecordAccessPat r
+noRecordAccessPat (AsPat _ p) = noRecordAccessPat p
+noRecordAccessPat _ = True
 
 -- | Check recursively that an expression tree contains no Tuple.
 -- Tuple doesn't roundtrip in PureScript (prints as App (Con "Tuple") ...).
@@ -201,13 +239,58 @@ noTuple (Do stmts) = all stmtOk stmts
   where stmtOk (StmtBind p e) = noTuplePat p && noTuple e
         stmtOk (StmtExpr e) = noTuple e
         stmtOk (StmtLet bs) = all (\(Binding p e) -> noTuplePat p && noTuple e) bs
+noTuple (ListLit es) = all noTuple es
+noTuple (LeftSection e _) = noTuple e
+noTuple (RightSection _ e) = noTuple e
+noTuple (Where e bs) = noTuple e && all bindOk bs
+  where bindOk (Binding p e') = noTuplePat p && noTuple e'
 noTuple _ = True
 
 -- | Check that a pattern contains no TuplePat (and no Tuple in nested expressions).
 noTuplePat :: Pat -> Bool
 noTuplePat (TuplePat _) = False
 noTuplePat (ConPat _ args) = all noTuplePat args
+noTuplePat (ListPat ps) = all noTuplePat ps
+noTuplePat (ConsPat l r) = noTuplePat l && noTuplePat r
+noTuplePat (AsPat _ p) = noTuplePat p
+noTuplePat (NegLitPat _) = True
 noTuplePat _ = True
+
+-- | Check recursively that an expression tree contains no ConsPat.
+-- ConsPat doesn't roundtrip in PureScript (prints as Cons → parses as ConPat).
+noConsExpr :: Expr -> Bool
+noConsExpr (Neg e) = noConsExpr e
+noConsExpr (RecordAccess e _) = noConsExpr e
+noConsExpr (App f x) = noConsExpr f && noConsExpr x
+noConsExpr (InfixApp l _ r) = noConsExpr l && noConsExpr r
+noConsExpr (Lam ps e) = all noConsPat ps && noConsExpr e
+noConsExpr (If c t e) = noConsExpr c && noConsExpr t && noConsExpr e
+noConsExpr (Case scrut alts) = noConsExpr scrut && all altOk alts
+  where altOk (CaseAlt p gs e) = noConsPat p && all guardOk gs && noConsExpr e
+        guardOk (Guard e) = noConsExpr e
+noConsExpr (Let bs e) = all bindOk bs && noConsExpr e
+  where bindOk (Binding p e') = noConsPat p && noConsExpr e'
+noConsExpr (Do stmts) = all stmtOk stmts
+  where stmtOk (StmtBind p e) = noConsPat p && noConsExpr e
+        stmtOk (StmtExpr e) = noConsExpr e
+        stmtOk (StmtLet bs) = all (\(Binding p e) -> noConsPat p && noConsExpr e) bs
+noConsExpr (Tuple es) = all noConsExpr es
+noConsExpr (ListLit es) = all noConsExpr es
+noConsExpr (LeftSection e _) = noConsExpr e
+noConsExpr (RightSection _ e) = noConsExpr e
+noConsExpr (Where e bs) = noConsExpr e && all bindOk bs
+  where bindOk (Binding p e') = noConsPat p && noConsExpr e'
+noConsExpr _ = True
+
+-- | Check that a pattern contains no ConsPat.
+noConsPat :: Pat -> Bool
+noConsPat (ConsPat _ _) = False
+noConsPat (ConPat _ args) = all noConsPat args
+noConsPat (TuplePat ps) = all noConsPat ps
+noConsPat (ListPat ps) = all noConsPat ps
+noConsPat (AsPat _ p) = noConsPat p
+noConsPat (NegLitPat _) = True
+noConsPat _ = True
 
 instance Arbitrary MethodEquation where
   arbitrary = sized $ \n -> do

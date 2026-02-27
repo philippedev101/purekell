@@ -214,6 +214,45 @@ spec = do
           runParse haskellPat "(a, b, c)" `shouldBe` Right triple
           runParse haskellPat "(a, (b, c))" `shouldBe` Right nested
 
+    describe "Cons patterns" $ do
+      describe "Simple cons" $ do
+        let ast = ConsPat (VarPat (Name "x")) (VarPat (Name "xs"))
+
+        it "Haskell prints as x : xs" $ do
+          runPrint haskellPat ast `shouldBe` "x : xs"
+
+        it "PureScript prints as Cons x xs" $ do
+          runPrint purescriptPat ast `shouldBe` "Cons x xs"
+
+        it "Haskell parses x : xs" $ do
+          runParse haskellPat "x : xs" `shouldBe` Right ast
+
+      describe "Nested cons" $ do
+        let ast = ConsPat (VarPat (Name "x")) (ConsPat (VarPat (Name "y")) (VarPat (Name "zs")))
+
+        it "Haskell prints as x : y : zs" $ do
+          runPrint haskellPat ast `shouldBe` "x : y : zs"
+
+        it "PureScript prints as Cons x (Cons y zs)" $ do
+          runPrint purescriptPat ast `shouldBe` "Cons x (Cons y zs)"
+
+      describe "Cons with constructor" $ do
+        let ast = ConsPat (ConPat (Name "Just") [VarPat (Name "x")]) (VarPat (Name "xs"))
+
+        it "Haskell prints as (Just x) : xs" $ do
+          runPrint haskellPat ast `shouldBe` "(Just x) : xs"
+
+        it "PureScript prints as Cons (Just x) xs" $ do
+          runPrint purescriptPat ast `shouldBe` "Cons (Just x) xs"
+
+      describe "Cross-language one-way" $ do
+        it "PS Cons x xs parses as ConPat, not ConsPat" $ do
+          let ast = ConsPat (VarPat (Name "x")) (VarPat (Name "xs"))
+              psText = runPrint purescriptPat ast
+          psText `shouldBe` "Cons x xs"
+          runParse purescriptPat psText `shouldBe`
+            Right (ConPat (Name "Cons") [VarPat (Name "x"), VarPat (Name "xs")])
+
     describe "Tuple cross-language one-way translation" $ do
       it "HS Tuple -> PS text -> PS parse gives App/Con, not Tuple" $ do
         let ast = Tuple [Var (Name "a"), Var (Name "b")]

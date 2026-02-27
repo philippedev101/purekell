@@ -45,3 +45,7 @@ spec = do
           Neg {} -> True
           RecordAccess {} -> True
           Tuple {} -> True
+          ListLit {} -> True
+          LeftSection {} -> True
+          RightSection {} -> True
+          Where {} -> True

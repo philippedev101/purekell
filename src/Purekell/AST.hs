@@ -53,6 +53,10 @@ data Expr
   | Neg Expr               -- ^ Prefix negation: -expr
   | RecordAccess Expr Name  -- ^ Record field access: rec.field (PS) / field rec (HS)
   | Tuple [Expr]            -- ^ Tuple literal (≥2 elements)
+  | ListLit [Expr]          -- ^ List literal: [1, 2, 3]
+  | LeftSection Expr Name   -- ^ Left operator section: (expr op)
+  | RightSection Name Expr  -- ^ Right operator section: (op expr)
+  | Where Expr [Binding]    -- ^ Where clause: expr where { pat = expr; ... }
   deriving (Eq, Show, Generic)
 
 data Pat
@@ -61,4 +65,8 @@ data Pat
   | LitPat Lit
   | WildPat
   | TuplePat [Pat]          -- ^ Tuple pattern (≥2 elements)
+  | ListPat [Pat]           -- ^ List pattern: [x, y, z]
+  | ConsPat Pat Pat          -- ^ Cons pattern: x : xs (HS) / Cons x xs (PS)
+  | AsPat Name Pat           -- ^ As-pattern: name@pat
+  | NegLitPat Lit            -- ^ Negated literal pattern: -42, -3.14
   deriving (Eq, Show, Generic)

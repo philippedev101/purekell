@@ -6,7 +6,7 @@ import Test.Hspec
 import Test.QuickCheck
 
 import Purekell.AST
-import Purekell.Arbitrary (noRecordAccess, noTuple, noTuplePat)
+import Purekell.Arbitrary (noRecordAccess, noTuple, noTuplePat, noConsExpr, noConsPat)
 import Purekell.Instance
 
 spec :: Spec
@@ -119,6 +119,69 @@ spec = do
           Left err -> expectationFailure (show err)
           Right eqs -> printMethodBody Haskell eqs `shouldBe` input
 
+    describe "Cons pattern in instance methods" $ do
+      it "Haskell prints cons pattern in method args" $ do
+        let eq = MethodEquation (Name "head'") [ConsPat (VarPat (Name "x")) WildPat] []
+                   (Var (Name "x"))
+        printMethodBody Haskell [eq] `shouldBe` "head' (x : _) = x"
+
+      it "PureScript prints cons pattern in method args" $ do
+        let eq = MethodEquation (Name "head'") [ConsPat (VarPat (Name "x")) WildPat] []
+                   (Var (Name "x"))
+        printMethodBody PureScript [eq] `shouldBe` "head' (Cons x _) = x"
+
+    describe "List in instance methods" $ do
+      it "list pattern in method args" $ do
+        let eq = MethodEquation (Name "single") [ListPat [VarPat (Name "x")]] []
+                   (Var (Name "x"))
+        printMethodBody Haskell [eq] `shouldBe` "single [x] = x"
+        printMethodBody PureScript [eq] `shouldBe` "single [x] = x"
+
+      it "list literal in method body" $ do
+        let eq = MethodEquation (Name "wrap") [VarPat (Name "x")] []
+                   (ListLit [Var (Name "x")])
+        printMethodBody Haskell [eq] `shouldBe` "wrap x = [x]"
+        printMethodBody PureScript [eq] `shouldBe` "wrap x = [x]"
+
+    describe "As-pattern in method args" $ do
+      it "Haskell prints as-pattern in method args" $ do
+        let eq = MethodEquation (Name "head'") [AsPat (Name "xs") (ConsPat (VarPat (Name "x")) WildPat)] []
+                   (Var (Name "x"))
+        printMethodBody Haskell [eq] `shouldBe` "head' (xs@(x : _)) = x"
+        printMethodBody PureScript [eq] `shouldBe` "head' (xs@(Cons x _)) = x"
+
+      it "Haskell as-pattern roundtrips via parseMethodBody" $ do
+        let input = "head' (xs@(x : _)) = x"
+        case parseMethodBody input of
+          Left err -> expectationFailure (show err)
+          Right eqs -> printMethodBody Haskell eqs `shouldBe` input
+
+    describe "Negated literal in method" $ do
+      it "prints and roundtrips negated literal pattern" $ do
+        let eq = MethodEquation (Name "isNegOne") [NegLitPat (IntLit 1)] []
+                   (Con (Name "True"))
+        printMethodBody Haskell [eq] `shouldBe` "isNegOne (-1) = True"
+        printMethodBody PureScript [eq] `shouldBe` "isNegOne (-1) = True"
+
+      it "Haskell negated literal roundtrips via parseMethodBody" $ do
+        let input = "isNegOne (-1) = True"
+        case parseMethodBody input of
+          Left err -> expectationFailure (show err)
+          Right eqs -> printMethodBody Haskell eqs `shouldBe` input
+
+    describe "Where clause in method body" $ do
+      it "prints and roundtrips where in method body" $ do
+        let input = "f x = y where { y = x + 1 }"
+        case parseMethodBody input of
+          Left err -> expectationFailure (show err)
+          Right eqs -> printMethodBody Haskell eqs `shouldBe` input
+
+      it "where with multiple bindings in method body" $ do
+        let input = "f x = a + b where { a = x; b = 1 }"
+        case parseMethodBody input of
+          Left err -> expectationFailure (show err)
+          Right eqs -> printMethodBody Haskell eqs `shouldBe` input
+
     describe "Roundtrip" $ do
       let noRA (MethodEquation _ _ gs body) =
             noRecordAccess body && all (\(Guard e) -> noRecordAccess e) gs
@@ -126,6 +189,8 @@ spec = do
             noRA (MethodEquation (Name "") [] gs body)
             && noTuple body && all (\(Guard e) -> noTuple e) gs
             && all noTuplePat pats
+            && noConsExpr body && all (\(Guard e) -> noConsExpr e) gs
+            && all noConsPat pats
       it "Haskell printMethodBody roundtrips" $ property $
         forAll (arbitrary `suchThat` noRA) $ \eq ->
           parseMethodBody (printMethodBody Haskell [eq]) === Right [eq :: MethodEquation]

@@ -6,7 +6,7 @@ import Test.Hspec
 import Test.QuickCheck
 
 import Purekell.AST
-import Purekell.Arbitrary (noRecordAccess, noTuple, noTuplePat)
+import Purekell.Arbitrary (noRecordAccess, noTuple, noTuplePat, noConsExpr, noConsPat)
 import Purekell.Codec (roundtrip, runParse, runPrint)
 import Purekell.Haskell (haskellExpr, haskellLit, haskellPat)
 import Purekell.PureScript (purescriptExpr, purescriptLit, purescriptPat)
@@ -28,14 +28,14 @@ spec = do
       it "lit roundtrips" $ property $ \lit ->
         roundtrip purescriptLit lit === Right (lit :: Lit)
 
-      it "expr roundtrips" $ property $ forAll (arbitrary `suchThat` noTuple) $ \expr ->
+      it "expr roundtrips" $ property $ forAll (arbitrary `suchThat` (\e -> noTuple e && noConsExpr e)) $ \expr ->
         roundtrip purescriptExpr expr === Right (expr :: Expr)
 
-      it "pat roundtrips" $ property $ forAll (arbitrary `suchThat` noTuplePat) $ \pat ->
+      it "pat roundtrips" $ property $ forAll (arbitrary `suchThat` (\p -> noTuplePat p && noConsPat p)) $ \pat ->
         roundtrip purescriptPat pat === Right (pat :: Pat)
 
     describe "Cross-language" $ do
-      it "Haskell expr -> PureScript expr -> Haskell expr" $ property $ forAll (arbitrary `suchThat` (\e -> noRecordAccess e && noTuple e)) $ \expr ->
+      it "Haskell expr -> PureScript expr -> Haskell expr" $ property $ forAll (arbitrary `suchThat` (\e -> noRecordAccess e && noTuple e && noConsExpr e)) $ \expr ->
         let hsText = runPrint haskellExpr expr
         in case runParse purescriptExpr hsText of
              Left err -> counterexample (show err) False
@@ -169,7 +169,7 @@ spec = do
         in runPrint purescriptExpr ast `shouldBe` "f (Tuple a b)"
 
     describe "Cross-language" $ do
-      it "Haskell pat -> PureScript pat -> Haskell pat" $ property $ forAll (arbitrary `suchThat` noTuplePat) $ \pat ->
+      it "Haskell pat -> PureScript pat -> Haskell pat" $ property $ forAll (arbitrary `suchThat` (\p -> noTuplePat p && noConsPat p)) $ \pat ->
         let hsText = runPrint haskellPat (pat :: Pat)
         in case runParse purescriptPat hsText of
              Left err -> counterexample (show err) False
@@ -178,3 +178,408 @@ spec = do
                in case runParse haskellPat psText of
                     Left err -> counterexample (show err) False
                     Right hsPat -> hsPat === pat
+
+    describe "List literals" $ do
+      it "parses []" $
+        runParse haskellExpr "[]" `shouldBe` Right (ListLit [])
+
+      it "parses [x]" $
+        runParse haskellExpr "[x]" `shouldBe` Right (ListLit [Var (Name "x")])
+
+      it "parses [1, 2, 3]" $
+        runParse haskellExpr "[1, 2, 3]" `shouldBe`
+          Right (ListLit [Literal (IntLit 1), Literal (IntLit 2), Literal (IntLit 3)])
+
+      it "parses [a + b, f c]" $
+        runParse haskellExpr "[a + b, f c]" `shouldBe`
+          Right (ListLit
+            [ InfixApp (Var (Name "a")) (Name "+") (Var (Name "b"))
+            , App (Var (Name "f")) (Var (Name "c"))
+            ])
+
+      it "parses [[1], [2]]" $
+        runParse haskellExpr "[[1], [2]]" `shouldBe`
+          Right (ListLit [ListLit [Literal (IntLit 1)], ListLit [Literal (IntLit 2)]])
+
+      it "prints []" $
+        runPrint haskellExpr (ListLit []) `shouldBe` "[]"
+
+      it "prints [1, 2, 3]" $
+        runPrint haskellExpr (ListLit [Literal (IntLit 1), Literal (IntLit 2), Literal (IntLit 3)])
+          `shouldBe` "[1, 2, 3]"
+
+      it "roundtrips [] in Haskell" $
+        roundtrip haskellExpr (ListLit []) `shouldBe` Right (ListLit [])
+
+      it "roundtrips [x] in Haskell" $
+        roundtrip haskellExpr (ListLit [Var (Name "x")]) `shouldBe` Right (ListLit [Var (Name "x")])
+
+      it "roundtrips [1, 2, 3] in Haskell" $
+        let ast = ListLit [Literal (IntLit 1), Literal (IntLit 2), Literal (IntLit 3)]
+        in roundtrip haskellExpr ast `shouldBe` Right ast
+
+      it "roundtrips in PureScript" $
+        let ast = ListLit [Var (Name "x"), Var (Name "y")]
+        in roundtrip purescriptExpr ast `shouldBe` Right ast
+
+      it "list literal as function argument" $
+        let ast = App (Var (Name "f")) (ListLit [Var (Name "a"), Var (Name "b")])
+        in do
+          runPrint haskellExpr ast `shouldBe` "f [a, b]"
+          roundtrip haskellExpr ast `shouldBe` Right ast
+
+      it "PureScript prints list same as Haskell" $
+        runPrint purescriptExpr (ListLit [Literal (IntLit 1), Literal (IntLit 2)])
+          `shouldBe` "[1, 2]"
+
+      it "cross-language roundtrips" $
+        let ast = ListLit [Literal (IntLit 1), Literal (IntLit 2)]
+            hsText = runPrint haskellExpr ast
+        in case runParse purescriptExpr hsText of
+             Left err -> expectationFailure (show err)
+             Right psExpr ->
+               let psText = runPrint purescriptExpr psExpr
+               in runParse haskellExpr psText `shouldBe` Right ast
+
+    describe "List patterns" $ do
+      it "parses []" $
+        runParse haskellPat "[]" `shouldBe` Right (ListPat [])
+
+      it "parses [x]" $
+        runParse haskellPat "[x]" `shouldBe` Right (ListPat [VarPat (Name "x")])
+
+      it "parses [x, y, z]" $
+        runParse haskellPat "[x, y, z]" `shouldBe`
+          Right (ListPat [VarPat (Name "x"), VarPat (Name "y"), VarPat (Name "z")])
+
+      it "list in case" $
+        runParse haskellExpr "case xs of { [] -> 0; [x] -> x }" `shouldBe`
+          Right (Case (Var (Name "xs"))
+            [ CaseAlt (ListPat []) [] (Literal (IntLit 0))
+            , CaseAlt (ListPat [VarPat (Name "x")]) [] (Var (Name "x"))
+            ])
+
+      it "list in lambda" $
+        runParse haskellExpr "\\[x] -> x" `shouldBe`
+          Right (Lam [ListPat [VarPat (Name "x")]] (Var (Name "x")))
+
+      it "roundtrips [] pattern in Haskell" $
+        roundtrip haskellPat (ListPat []) `shouldBe` Right (ListPat [])
+
+      it "roundtrips [x, y] pattern in Haskell" $
+        let ast = ListPat [VarPat (Name "x"), VarPat (Name "y")]
+        in roundtrip haskellPat ast `shouldBe` Right ast
+
+      it "roundtrips list pattern in PureScript" $
+        let ast = ListPat [VarPat (Name "x"), VarPat (Name "y")]
+        in roundtrip purescriptPat ast `shouldBe` Right ast
+
+      it "cross-language roundtrips" $
+        let ast = ListPat [VarPat (Name "x"), VarPat (Name "y")]
+            hsText = runPrint haskellPat ast
+        in case runParse purescriptPat hsText of
+             Left err -> expectationFailure (show err)
+             Right psPat ->
+               let psText = runPrint purescriptPat psPat
+               in runParse haskellPat psText `shouldBe` Right ast
+
+    describe "Cons patterns" $ do
+      it "parses x : xs" $
+        runParse haskellPat "x : xs" `shouldBe`
+          Right (ConsPat (VarPat (Name "x")) (VarPat (Name "xs")))
+
+      it "parses x : y : zs (right-associative)" $
+        runParse haskellPat "x : y : zs" `shouldBe`
+          Right (ConsPat (VarPat (Name "x")) (ConsPat (VarPat (Name "y")) (VarPat (Name "zs"))))
+
+      it "parses (Just x) : xs" $
+        runParse haskellPat "(Just x) : xs" `shouldBe`
+          Right (ConsPat (ConPat (Name "Just") [VarPat (Name "x")]) (VarPat (Name "xs")))
+
+      it "Haskell prints x : xs" $
+        runPrint haskellPat (ConsPat (VarPat (Name "x")) (VarPat (Name "xs")))
+          `shouldBe` "x : xs"
+
+      it "Haskell prints x : y : zs" $
+        runPrint haskellPat (ConsPat (VarPat (Name "x")) (ConsPat (VarPat (Name "y")) (VarPat (Name "zs"))))
+          `shouldBe` "x : y : zs"
+
+      it "roundtrips x : xs in Haskell" $
+        let ast = ConsPat (VarPat (Name "x")) (VarPat (Name "xs"))
+        in roundtrip haskellPat ast `shouldBe` Right ast
+
+      it "roundtrips x : y : zs in Haskell" $
+        let ast = ConsPat (VarPat (Name "x")) (ConsPat (VarPat (Name "y")) (VarPat (Name "zs")))
+        in roundtrip haskellPat ast `shouldBe` Right ast
+
+      it "cons in case" $
+        runParse haskellExpr "case xs of { x : rest -> x; [] -> 0 }" `shouldBe`
+          Right (Case (Var (Name "xs"))
+            [ CaseAlt (ConsPat (VarPat (Name "x")) (VarPat (Name "rest"))) [] (Var (Name "x"))
+            , CaseAlt (ListPat []) [] (Literal (IntLit 0))
+            ])
+
+      it "roundtrips cons in case" $
+        let ast = Case (Var (Name "xs"))
+              [ CaseAlt (ConsPat (VarPat (Name "x")) (VarPat (Name "rest"))) [] (Var (Name "x"))
+              , CaseAlt (ListPat []) [] (Literal (IntLit 0))
+              ]
+        in roundtrip haskellExpr ast `shouldBe` Right ast
+
+      it "Just x : xs (constructor then cons)" $
+        runParse haskellPat "Just x : xs" `shouldBe`
+          Right (ConsPat (ConPat (Name "Just") [VarPat (Name "x")]) (VarPat (Name "xs")))
+
+    describe "Operator sections" $ do
+      it "parses (+ 1)" $
+        runParse haskellExpr "(+ 1)" `shouldBe`
+          Right (RightSection (Name "+") (Literal (IntLit 1)))
+
+      it "parses (1 +)" $
+        runParse haskellExpr "(1 +)" `shouldBe`
+          Right (LeftSection (Literal (IntLit 1)) (Name "+"))
+
+      it "parses (== 0)" $
+        runParse haskellExpr "(== 0)" `shouldBe`
+          Right (RightSection (Name "==") (Literal (IntLit 0)))
+
+      it "parses (<> \"x\")" $
+        runParse haskellExpr "(<> \"x\")" `shouldBe`
+          Right (RightSection (Name "<>") (Literal (StringLit "x")))
+
+      it "(-x) is NOT a section (still negation)" $
+        runParse haskellExpr "(-x)" `shouldBe`
+          Right (Neg (Var (Name "x")))
+
+      it "section as argument: map (+ 1) xs" $
+        runParse haskellExpr "map (+ 1) xs" `shouldBe`
+          Right (App (App (Var (Name "map")) (RightSection (Name "+") (Literal (IntLit 1)))) (Var (Name "xs")))
+
+      it "left section with app: (f x +)" $
+        runParse haskellExpr "(f x +)" `shouldBe`
+          Right (LeftSection (App (Var (Name "f")) (Var (Name "x"))) (Name "+"))
+
+      it "(a + b) is grouped infix, NOT a section" $
+        runParse haskellExpr "(a + b)" `shouldBe`
+          Right (InfixApp (Var (Name "a")) (Name "+") (Var (Name "b")))
+
+      it "prints (+ 1)" $
+        runPrint haskellExpr (RightSection (Name "+") (Literal (IntLit 1)))
+          `shouldBe` "(+ 1)"
+
+      it "prints (1 +)" $
+        runPrint haskellExpr (LeftSection (Literal (IntLit 1)) (Name "+"))
+          `shouldBe` "(1 +)"
+
+      it "roundtrips (+ 1) in Haskell" $
+        let ast = RightSection (Name "+") (Literal (IntLit 1))
+        in roundtrip haskellExpr ast `shouldBe` Right ast
+
+      it "roundtrips (1 +) in Haskell" $
+        let ast = LeftSection (Literal (IntLit 1)) (Name "+")
+        in roundtrip haskellExpr ast `shouldBe` Right ast
+
+      it "roundtrips (+ 1) in PureScript" $
+        let ast = RightSection (Name "+") (Literal (IntLit 1))
+        in roundtrip purescriptExpr ast `shouldBe` Right ast
+
+      it "roundtrips (1 +) in PureScript" $
+        let ast = LeftSection (Literal (IntLit 1)) (Name "+")
+        in roundtrip purescriptExpr ast `shouldBe` Right ast
+
+      it "PureScript prints (+ 1) same as Haskell" $
+        runPrint purescriptExpr (RightSection (Name "+") (Literal (IntLit 1)))
+          `shouldBe` "(+ 1)"
+
+      it "PureScript prints (1 +) same as Haskell" $
+        runPrint purescriptExpr (LeftSection (Literal (IntLit 1)) (Name "+"))
+          `shouldBe` "(1 +)"
+
+      it "cross-language roundtrips" $
+        let ast = LeftSection (Var (Name "x")) (Name "+")
+            hsText = runPrint haskellExpr ast
+        in case runParse purescriptExpr hsText of
+             Left err -> expectationFailure (show err)
+             Right psExpr ->
+               let psText = runPrint purescriptExpr psExpr
+               in runParse haskellExpr psText `shouldBe` Right ast
+
+    describe "As-patterns" $ do
+      it "parses x@(Just y)" $
+        runParse haskellPat "x@(Just y)" `shouldBe`
+          Right (AsPat (Name "x") (ConPat (Name "Just") [VarPat (Name "y")]))
+
+      it "parses xs@[]" $
+        runParse haskellPat "xs@[]" `shouldBe`
+          Right (AsPat (Name "xs") (ListPat []))
+
+      it "parses xs@(a : b)" $
+        runParse haskellPat "xs@(a : b)" `shouldBe`
+          Right (AsPat (Name "xs") (ConsPat (VarPat (Name "a")) (VarPat (Name "b"))))
+
+      it "prints AsPat in Haskell" $
+        runPrint haskellPat (AsPat (Name "x") (ConPat (Name "Just") [VarPat (Name "y")]))
+          `shouldBe` "x@(Just y)"
+
+      it "prints AsPat in PureScript" $
+        runPrint purescriptPat (AsPat (Name "x") (ConPat (Name "Just") [VarPat (Name "y")]))
+          `shouldBe` "x@(Just y)"
+
+      it "roundtrips x@(Just y) in Haskell" $
+        let ast = AsPat (Name "x") (ConPat (Name "Just") [VarPat (Name "y")])
+        in roundtrip haskellPat ast `shouldBe` Right ast
+
+      it "roundtrips xs@[a, b] in Haskell" $
+        let ast = AsPat (Name "xs") (ListPat [VarPat (Name "a"), VarPat (Name "b")])
+        in roundtrip haskellPat ast `shouldBe` Right ast
+
+      it "roundtrips x@(Just y) in PureScript" $
+        let ast = AsPat (Name "x") (ConPat (Name "Just") [VarPat (Name "y")])
+        in roundtrip purescriptPat ast `shouldBe` Right ast
+
+      it "cross-language roundtrips" $
+        let ast = AsPat (Name "x") (ConPat (Name "Just") [VarPat (Name "y")])
+            hsText = runPrint haskellPat ast
+        in case runParse purescriptPat hsText of
+             Left err -> expectationFailure (show err)
+             Right psPat ->
+               let psText = runPrint purescriptPat psPat
+               in runParse haskellPat psText `shouldBe` Right ast
+
+      it "in case" $
+        runParse haskellExpr "case xs of { ys@(x : _) -> ys; _ -> [] }" `shouldBe`
+          Right (Case (Var (Name "xs"))
+            [ CaseAlt (AsPat (Name "ys") (ConsPat (VarPat (Name "x")) WildPat)) [] (Var (Name "ys"))
+            , CaseAlt WildPat [] (ListLit [])
+            ])
+
+      it "in lambda" $
+        runParse haskellExpr "\\xs@(x : _) -> x" `shouldBe`
+          Right (Lam [AsPat (Name "xs") (ConsPat (VarPat (Name "x")) WildPat)] (Var (Name "x")))
+
+    describe "Negated literal patterns" $ do
+      it "parses -1" $
+        runParse haskellPat "-1" `shouldBe` Right (NegLitPat (IntLit 1))
+
+      it "parses -3.14" $
+        runParse haskellPat "-3.14" `shouldBe` Right (NegLitPat (FloatLit 3.14))
+
+      it "prints NegLitPat" $
+        runPrint haskellPat (NegLitPat (IntLit 1)) `shouldBe` "-1"
+
+      it "prints NegLitPat in PureScript" $
+        runPrint purescriptPat (NegLitPat (FloatLit 3.14)) `shouldBe` "-3.14"
+
+      it "prints NegLitPat in constructor (gets parens)" $
+        runPrint haskellPat (ConPat (Name "Just") [NegLitPat (IntLit 1)])
+          `shouldBe` "Just (-1)"
+
+      it "roundtrips Just (-1) in Haskell" $
+        let ast = ConPat (Name "Just") [NegLitPat (IntLit 1)]
+        in roundtrip haskellPat ast `shouldBe` Right ast
+
+      it "roundtrips -1 in Haskell" $
+        roundtrip haskellPat (NegLitPat (IntLit 1)) `shouldBe` Right (NegLitPat (IntLit 1))
+
+      it "roundtrips -3.14 in Haskell" $
+        roundtrip haskellPat (NegLitPat (FloatLit 3.14)) `shouldBe` Right (NegLitPat (FloatLit 3.14))
+
+      it "roundtrips -1 in PureScript" $
+        roundtrip purescriptPat (NegLitPat (IntLit 1)) `shouldBe` Right (NegLitPat (IntLit 1))
+
+      it "cross-language roundtrips" $
+        let ast = NegLitPat (IntLit 42)
+            hsText = runPrint haskellPat ast
+        in case runParse purescriptPat hsText of
+             Left err -> expectationFailure (show err)
+             Right psPat ->
+               let psText = runPrint purescriptPat psPat
+               in runParse haskellPat psText `shouldBe` Right ast
+
+      it "in case" $
+        runParse haskellExpr "case x of { -1 -> True; _ -> False }" `shouldBe`
+          Right (Case (Var (Name "x"))
+            [ CaseAlt (NegLitPat (IntLit 1)) [] (Con (Name "True"))
+            , CaseAlt WildPat [] (Con (Name "False"))
+            ])
+
+      it "parenthesized (-1) as pattern" $
+        runParse haskellPat "(-1)" `shouldBe` Right (NegLitPat (IntLit 1))
+
+    describe "Where clauses" $ do
+      it "parses x + 1 where { x = 42 }" $
+        runParse haskellExpr "x + 1 where { x = 42 }" `shouldBe`
+          Right (Where
+            (InfixApp (Var (Name "x")) (Name "+") (Literal (IntLit 1)))
+            [Binding (VarPat (Name "x")) (Literal (IntLit 42))])
+
+      it "parses y where { y = f x; x = 3 }" $
+        runParse haskellExpr "y where { y = f x; x = 3 }" `shouldBe`
+          Right (Where
+            (Var (Name "y"))
+            [ Binding (VarPat (Name "y")) (App (Var (Name "f")) (Var (Name "x")))
+            , Binding (VarPat (Name "x")) (Literal (IntLit 3))
+            ])
+
+      it "prints Where" $
+        runPrint haskellExpr (Where
+            (InfixApp (Var (Name "x")) (Name "+") (Literal (IntLit 1)))
+            [Binding (VarPat (Name "x")) (Literal (IntLit 42))])
+          `shouldBe` "x + 1 where { x = 42 }"
+
+      it "roundtrips x + 1 where { x = 42 } in Haskell" $
+        let ast = Where
+              (InfixApp (Var (Name "x")) (Name "+") (Literal (IntLit 1)))
+              [Binding (VarPat (Name "x")) (Literal (IntLit 42))]
+        in roundtrip haskellExpr ast `shouldBe` Right ast
+
+      it "roundtrips in PureScript" $
+        let ast = Where
+              (InfixApp (Var (Name "x")) (Name "+") (Literal (IntLit 1)))
+              [Binding (VarPat (Name "x")) (Literal (IntLit 42))]
+        in roundtrip purescriptExpr ast `shouldBe` Right ast
+
+      it "cross-language roundtrips" $
+        let ast = Where (Var (Name "y")) [Binding (VarPat (Name "y")) (Literal (IntLit 1))]
+            hsText = runPrint haskellExpr ast
+        in case runParse purescriptExpr hsText of
+             Left err -> expectationFailure (show err)
+             Right psExpr ->
+               let psText = runPrint purescriptExpr psExpr
+               in runParse haskellExpr psText `shouldBe` Right ast
+
+      it "where in lambda body" $
+        runParse haskellExpr "\\x -> y where { y = x + 1 }" `shouldBe`
+          Right (Lam [VarPat (Name "x")]
+            (Where (Var (Name "y"))
+              [Binding (VarPat (Name "y")) (InfixApp (Var (Name "x")) (Name "+") (Literal (IntLit 1)))]))
+
+      it "where in case alt body" $
+        runParse haskellExpr "case n of { 0 -> 1; _ -> n * f n where { f = fac } }" `shouldBe`
+          Right (Case (Var (Name "n"))
+            [ CaseAlt (LitPat (IntLit 0)) [] (Literal (IntLit 1))
+            , CaseAlt WildPat []
+                (Where (InfixApp (Var (Name "n")) (Name "*") (App (Var (Name "f")) (Var (Name "n"))))
+                  [Binding (VarPat (Name "f")) (Var (Name "fac"))])
+            ])
+
+      it "nested where" $
+        runParse haskellExpr "x where { x = y where { y = 1 } }" `shouldBe`
+          Right (Where (Var (Name "x"))
+            [Binding (VarPat (Name "x"))
+              (Where (Var (Name "y"))
+                [Binding (VarPat (Name "y")) (Literal (IntLit 1))])])
+
+      it "where as function argument needs parens" $
+        let ast = App (Var (Name "f")) (Where (Var (Name "x")) [Binding (VarPat (Name "x")) (Literal (IntLit 1))])
+        in do
+          runPrint haskellExpr ast `shouldBe` "f (x where { x = 1 })"
+          roundtrip haskellExpr ast `shouldBe` Right ast
+
+      it "where with multiple bindings" $
+        let ast = Where
+              (InfixApp (Var (Name "x")) (Name "+") (Var (Name "y")))
+              [ Binding (VarPat (Name "x")) (Literal (IntLit 1))
+              , Binding (VarPat (Name "y")) (Literal (IntLit 2))
+              ]
+        in roundtrip haskellExpr ast `shouldBe` Right ast

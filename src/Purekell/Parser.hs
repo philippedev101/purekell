@@ -81,14 +81,26 @@ pOperator = lexeme $ try $ do
 
 -- Pattern parsers
 
+pPatMinus :: Parser ()
+pPatMinus = () <$ lexeme (try (char '-' <* notFollowedBy (oneOf ("!#$%&*+./<=>?@\\^|-~:" :: [Char]))))
+
+pNumLit :: Parser Lit
+pNumLit = pFloatLit <|> pIntLit
+
 pAtomPat :: Parser Pat
 pAtomPat = choice
-  [ LitPat <$> pLit
+  [ NegLitPat <$> (pPatMinus *> pNumLit)
+  , LitPat <$> pLit
   , WildPat <$ lexeme (char '_' <* notFollowedBy (alphaNumChar <|> char '_' <|> char '\''))
   , ConPat <$> pUpperName <*> pure []
+  , try (AsPat <$> pLowerName <*> (symbol "@" *> pAtomPat))
   , VarPat <$> pLowerName
   , pParenOrTuplePat
+  , pListPat
   ]
+
+pListPat :: Parser Pat
+pListPat = ListPat <$> (symbol "[" *> pPat `sepBy` symbol "," <* symbol "]")
 
 pParenOrTuplePat :: Parser Pat
 pParenOrTuplePat = do
@@ -103,8 +115,16 @@ pParenOrTuplePat = do
 pConPat :: Parser Pat
 pConPat = ConPat <$> pUpperName <*> many pAtomPat
 
+pConsOp :: Parser ()
+pConsOp = lexeme $ try $ () <$ char ':' <* notFollowedBy (oneOf ("!#$%&*+./<=>?@\\^|-~:" :: [Char]))
+
 pPat :: Parser Pat
-pPat = pConPat <|> pAtomPat
+pPat = do
+  left <- pConPat <|> pAtomPat
+  rest <- optional (pConsOp *> pPat)
+  pure $ case rest of
+    Nothing -> left
+    Just r  -> ConsPat left r
 
 -- Expression parsers
 
@@ -122,16 +142,41 @@ mkExprParsers wrapAtom = ExprParsers { epExpr = expr, epGuard = guard }
       [ Literal <$> pLit
       , Con <$> pUpperName
       , Var <$> pLowerName
-      , pParenOrTuple
+      , pParenOrTupleOrSection
+      , pList
       ]
-    pParenOrTuple = do
+    pList = ListLit <$> (symbol "[" *> expr `sepBy` symbol "," <* symbol "]")
+    pNonMinusOp = lexeme $ try $ do
+      op <- some (oneOf ("!#$%&*+./<=>?@\\^|-~:" :: [Char]))
+      let n = T.pack op
+      if n `elem` ["->", "|", "<-", "=", "-"] then fail "reserved/excluded operator" else pure (Name n)
+    pParenOrTupleOrSection = do
       _ <- symbol "("
-      e <- expr
-      rest <- many (symbol "," *> expr)
-      _ <- symbol ")"
-      pure $ case rest of
-        [] -> e
-        _  -> Tuple (e : rest)
+      choice
+        [ -- Right section: (op expr) — exclude solo minus to avoid (-x) conflict
+          try (RightSection <$> pNonMinusOp <*> expr <* symbol ")")
+        , -- Parse prefix-level expr, then decide (for left sections + infix)
+          do e <- prefixExpr
+             choice
+               [ -- Left section: expr op )
+                 try (LeftSection e <$> pOperator <* symbol ")")
+               , -- Infix continuation → then optional where, then tuple or grouping
+                 do rest <- many ((,) <$> pOperator <*> prefixExpr)
+                    let infE = foldl (\l (op, r) -> InfixApp l op r) e rest
+                    fullE <- pOptionalWhere infE
+                    choice
+                      [ Tuple . (fullE :) <$> some (symbol "," *> expr) <* symbol ")"
+                      , fullE <$ symbol ")"
+                      ]
+               ]
+        , -- Non-prefix expressions (lambda, if, case, let, do) inside parens
+          do e <- lam <|> try ifE <|> try caseE <|> try letE <|> try doE
+             e' <- pOptionalWhere e
+             choice
+               [ Tuple . (e' :) <$> some (symbol "," *> expr) <* symbol ")"
+               , e' <$ symbol ")"
+               ]
+        ]
     wrappedAtom = wrapAtom atom
     appExpr = do
       f <- wrappedAtom
@@ -158,4 +203,10 @@ mkExprParsers wrapAtom = ExprParsers { epExpr = expr, epGuard = guard }
     stmtExpr = StmtExpr <$> expr
     stmt = try stmtBind <|> try stmtLet <|> stmtExpr
     doE = Do <$> (keyword "do" *> symbol "{" *> stmt `sepBy1` symbol ";" <* symbol "}")
-    expr = lam <|> try ifE <|> try caseE <|> try letE <|> try doE <|> infixExpr
+    pOptionalWhere e = do
+      mbs <- optional (keyword "where" *> symbol "{" *> binding `sepBy1` symbol ";" <* symbol "}")
+      pure $ case mbs of
+        Nothing -> e
+        Just bs -> Where e bs
+    whereExpr = infixExpr >>= pOptionalWhere
+    expr = lam <|> try ifE <|> try caseE <|> try letE <|> try doE <|> whereExpr
