@@ -116,9 +116,11 @@ mkExprParsers wrapAtom = ExprParsers { epExpr = expr, epGuard = guard }
       f <- wrappedAtom
       args <- many wrappedAtom
       pure (foldl App f args)
+    pPrefixMinus = lexeme (try (char '-' <* notFollowedBy (oneOf ("!#$%&*+./<=>?@\\^|-~:" :: [Char]))))
+    prefixExpr = (Neg <$> (pPrefixMinus *> appExpr)) <|> appExpr
     infixExpr = do
-      first <- appExpr
-      rest <- many ((,) <$> pOperator <*> appExpr)
+      first <- prefixExpr
+      rest <- many ((,) <$> pOperator <*> prefixExpr)
       pure (foldl (\l (op, r) -> InfixApp l op r) first rest)
     guard = symbol "|" *> (Guard <$> infixExpr)
     lam = Lam <$> (symbol "\\" *> some pAtomPat) <*> (symbol "->" *> expr)

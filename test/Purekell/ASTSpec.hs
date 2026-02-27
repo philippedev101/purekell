@@ -41,4 +41,5 @@ spec = do
           Case {} -> True
           Let {} -> True
           Do {} -> True
+          Neg {} -> True
           RecordAccess {} -> True

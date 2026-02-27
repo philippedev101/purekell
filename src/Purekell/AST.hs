@@ -49,6 +49,7 @@ data Expr
   | Case Expr [CaseAlt]
   | Let [Binding] Expr
   | Do [Stmt]
+  | Neg Expr               -- ^ Prefix negation: -expr
   | RecordAccess Expr Name  -- ^ Record field access: rec.field (PS) / field rec (HS)
   deriving (Eq, Show, Generic)
 

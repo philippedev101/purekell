@@ -48,6 +48,7 @@ printExpr t (Let bindings body) =
   <> " } in " <> printExpr t body
 printExpr t (Do stmts) =
   "do { " <> T.intercalate "; " (map (printStmt t) stmts) <> " }"
+printExpr t (Neg e) = "-" <> printAppFun t e
 printExpr Haskell (RecordAccess rec (Name field)) =
   field <> " " <> printAtom Haskell rec
 printExpr PureScript (RecordAccess rec (Name field)) =
@@ -56,6 +57,7 @@ printExpr PureScript (RecordAccess rec (Name field)) =
 -- Parenthesization helpers
 
 isCompound :: Target -> Expr -> Bool
+isCompound _ (Neg {})  = True
 isCompound Haskell    (RecordAccess {}) = True
 isCompound PureScript (RecordAccess {}) = False
 isCompound _ (App {})      = True

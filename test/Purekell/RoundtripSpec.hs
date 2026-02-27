@@ -45,6 +45,38 @@ spec = do
                     Left err -> counterexample (show err) False
                     Right hsExpr -> hsExpr === expr
 
+    describe "Negation" $ do
+      it "parses -x" $
+        runParse haskellExpr "-x" `shouldBe` Right (Neg (Var (Name "x")))
+
+      it "parses -42" $
+        runParse haskellExpr "-42" `shouldBe` Right (Neg (Literal (IntLit 42)))
+
+      it "parses -f x" $
+        runParse haskellExpr "-f x" `shouldBe` Right (Neg (App (Var (Name "f")) (Var (Name "x"))))
+
+      it "parses -x + y" $
+        runParse haskellExpr "-x + y" `shouldBe` Right (InfixApp (Neg (Var (Name "x"))) (Name "+") (Var (Name "y")))
+
+      it "parses x + -y" $
+        runParse haskellExpr "x + -y" `shouldBe` Right (InfixApp (Var (Name "x")) (Name "+") (Neg (Var (Name "y"))))
+
+      it "prints -x" $
+        runPrint haskellExpr (Neg (Var (Name "x"))) `shouldBe` "-x"
+
+      it "prints -(a + b)" $
+        runPrint haskellExpr (Neg (InfixApp (Var (Name "a")) (Name "+") (Var (Name "b")))) `shouldBe` "-(a + b)"
+
+      it "prints -(-x)" $
+        runPrint haskellExpr (Neg (Neg (Var (Name "x")))) `shouldBe` "-(-x)"
+
+      it "roundtrips negation via PureScript" $
+        runParse purescriptExpr (runPrint purescriptExpr (Neg (Var (Name "x")))) `shouldBe` Right (Neg (Var (Name "x")))
+
+      it "does not treat -> as negation" $
+        runParse haskellExpr "\\x -> x" `shouldBe` Right (Lam [VarPat (Name "x")] (Var (Name "x")))
+
+    describe "Cross-language" $ do
       it "Haskell pat -> PureScript pat -> Haskell pat" $ property $ \pat ->
         let hsText = runPrint haskellPat (pat :: Pat)
         in case runParse purescriptPat hsText of

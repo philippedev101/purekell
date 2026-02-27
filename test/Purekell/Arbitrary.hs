@@ -111,6 +111,7 @@ instance Arbitrary Expr where
         , (1, do numStmts <- choose (1, 3)
                  stmts <- vectorOf numStmts (resize half arbitrary)
                  pure (Do stmts))
+        , (1, Neg <$> go half)
         , (1, RecordAccess <$> go half <*> (Name <$> genIdent))
         ]
         where
@@ -124,6 +125,7 @@ instance Arbitrary Expr where
   shrink (Case scrut alts) = scrut : [body | CaseAlt _ _ body <- alts]
   shrink (Let _ body) = [body]
   shrink (Do stmts) = [e | StmtExpr e <- stmts]
+  shrink (Neg e) = e : [Neg e' | e' <- shrink e]
   shrink (RecordAccess rec _) = [rec]
   shrink _ = []
 
@@ -152,6 +154,7 @@ instance Arbitrary Pat where
 -- RecordAccess only roundtrips in PureScript (dot syntax), not Haskell
 -- (prints as function application) or Instance (no dot access parser).
 noRecordAccess :: Expr -> Bool
+noRecordAccess (Neg e) = noRecordAccess e
 noRecordAccess (RecordAccess _ _) = False
 noRecordAccess (App f x) = noRecordAccess f && noRecordAccess x
 noRecordAccess (InfixApp l _ r) = noRecordAccess l && noRecordAccess r
