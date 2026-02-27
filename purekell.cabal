@@ -1,0 +1,74 @@
+cabal-version: 2.2
+
+-- This file has been generated from package.yaml by hpack version 0.38.1.
+--
+-- see: https://github.com/sol/hpack
+
+name:           purekell
+version:        0.1.0.0
+category:       Web
+homepage:       https://github.com/githubuser/purekell#readme
+bug-reports:    https://github.com/githubuser/purekell/issues
+author:         Author name here
+maintainer:     example@example.com
+copyright:      2026 Author name here
+license:        Apache-2.0
+license-file:   LICENSE
+build-type:     Simple
+extra-source-files:
+    README.md
+    CHANGELOG.md
+
+source-repository head
+  type: git
+  location: https://github.com/githubuser/purekell
+
+library
+  exposed-modules:
+      Purekell
+      Purekell.AST
+      Purekell.Codec
+      Purekell.Haskell
+      Purekell.Parser
+      Purekell.Printer
+      Purekell.PureScript
+      Purekell.Instance
+  other-modules:
+      Paths_purekell
+  autogen-modules:
+      Paths_purekell
+  hs-source-dirs:
+      src
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
+  build-depends:
+      base >=4.7 && <5
+    , containers
+    , megaparsec
+    , text
+  default-language: Haskell2010
+
+test-suite purekell-test
+  type: exitcode-stdio-1.0
+  main-is: Spec.hs
+  other-modules:
+      Purekell.Arbitrary
+      Purekell.ASTSpec
+      Purekell.DivergentSpec
+      Purekell.InstanceSpec
+      Purekell.RoundtripSpec
+      Paths_purekell
+  autogen-modules:
+      Paths_purekell
+  hs-source-dirs:
+      test
+  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
+  build-depends:
+      QuickCheck
+    , base >=4.7 && <5
+    , containers
+    , hspec
+    , hspec-discover
+    , megaparsec
+    , purekell
+    , text
+  default-language: Haskell2010

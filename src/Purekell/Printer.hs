@@ -1,0 +1,154 @@
+{-# LANGUAGE OverloadedStrings #-}
+
+module Purekell.Printer
+  ( Target (..)
+  , printExpr
+  , printLit
+  , printPat
+  , printPatAtom
+  , printAtom
+  , printAppFun
+  , printInfixArg
+  , printInfixLevel
+  , printGuard
+  , printGuards
+  , printCaseAlt
+  , printBinding
+  , printStmt
+  ) where
+
+import Data.Text (Text)
+import qualified Data.Text as T
+
+import Purekell.AST
+
+-- | Target language for printing
+data Target = Haskell | PureScript
+  deriving (Eq, Show)
+
+-- Expression printer
+
+printExpr :: Target -> Expr -> Text
+printExpr _ (Literal l) = printLit l
+printExpr _ (Var (Name n)) = n
+printExpr _ (Con (Name n)) = n
+printExpr t (App f x) = printAppFun t f <> " " <> printAtom t x
+printExpr t (InfixApp l (Name op) r) =
+  printInfixArg t l <> " " <> op <> " " <> printInfixArg t r
+printExpr t (Lam pats body) =
+  "\\" <> T.intercalate " " (map printPatAtom pats) <> " -> " <> printExpr t body
+printExpr t (If c th el) =
+  "if " <> printExpr t c <> " then " <> printExpr t th <> " else " <> printExpr t el
+printExpr t (Case scrut alts) =
+  "case " <> printExpr t scrut <> " of { "
+  <> T.intercalate "; " (map (printCaseAlt t) alts)
+  <> " }"
+printExpr t (Let bindings body) =
+  "let { " <> T.intercalate "; " (map (printBinding t) bindings)
+  <> " } in " <> printExpr t body
+printExpr t (Do stmts) =
+  "do { " <> T.intercalate "; " (map (printStmt t) stmts) <> " }"
+printExpr Haskell (RecordAccess rec (Name field)) =
+  field <> " " <> printAtom Haskell rec
+printExpr PureScript (RecordAccess rec (Name field)) =
+  printAtom PureScript rec <> "." <> field
+
+-- Parenthesization helpers
+
+isCompound :: Target -> Expr -> Bool
+isCompound Haskell    (RecordAccess {}) = True
+isCompound PureScript (RecordAccess {}) = False
+isCompound _ (App {})      = True
+isCompound _ (InfixApp {}) = True
+isCompound _ (Lam {})      = True
+isCompound _ (If {})       = True
+isCompound _ (Case {})     = True
+isCompound _ (Let {})      = True
+isCompound _ (Do {})       = True
+isCompound _ _             = False
+
+printAtom :: Target -> Expr -> Text
+printAtom t e
+  | isCompound t e = "(" <> printExpr t e <> ")"
+  | otherwise      = printExpr t e
+
+printAppFun :: Target -> Expr -> Text
+printAppFun t e@(App {}) = printExpr t e  -- left-assoc app doesn't need parens on left
+printAppFun t e
+  | isCompound t e = "(" <> printExpr t e <> ")"
+  | otherwise      = printExpr t e
+
+printInfixArg :: Target -> Expr -> Text
+printInfixArg t e@(InfixApp {}) = "(" <> printExpr t e <> ")"
+printInfixArg t e@(Lam {})      = "(" <> printExpr t e <> ")"
+printInfixArg t e@(If {})       = "(" <> printExpr t e <> ")"
+printInfixArg t e@(Case {})     = "(" <> printExpr t e <> ")"
+printInfixArg t e@(Let {})      = "(" <> printExpr t e <> ")"
+printInfixArg t e@(Do {})       = "(" <> printExpr t e <> ")"
+printInfixArg t e               = printExpr t e
+
+printInfixLevel :: Target -> Expr -> Text
+printInfixLevel t e@(Lam {})  = "(" <> printExpr t e <> ")"
+printInfixLevel t e@(If {})   = "(" <> printExpr t e <> ")"
+printInfixLevel t e@(Case {}) = "(" <> printExpr t e <> ")"
+printInfixLevel t e@(Let {})  = "(" <> printExpr t e <> ")"
+printInfixLevel t e@(Do {})   = "(" <> printExpr t e <> ")"
+printInfixLevel t e           = printExpr t e
+
+-- Guard / case alt / binding / stmt printers
+
+printGuard :: Target -> Guard -> Text
+printGuard t (Guard e) = "| " <> printInfixLevel t e
+
+printGuards :: Target -> [Guard] -> Text
+printGuards _ [] = ""
+printGuards t gs = " " <> T.intercalate " " (map (printGuard t) gs)
+
+printCaseAlt :: Target -> CaseAlt -> Text
+printCaseAlt t (CaseAlt pat guards body) =
+  printPat pat <> printGuards t guards <> " -> " <> printExpr t body
+
+printBinding :: Target -> Binding -> Text
+printBinding t (Binding pat body) = printPat pat <> " = " <> printExpr t body
+
+printStmt :: Target -> Stmt -> Text
+printStmt t (StmtBind pat body) = printPat pat <> " <- " <> printExpr t body
+printStmt t (StmtExpr e) = printExpr t e
+printStmt t (StmtLet bindings) =
+  "let { " <> T.intercalate "; " (map (printBinding t) bindings) <> " }"
+
+-- Literal printer
+
+printLit :: Lit -> Text
+printLit (IntLit n) = T.pack (show n)
+printLit (StringLit s) = "\"" <> escapeString s <> "\""
+printLit (CharLit c) = "'" <> escapeChar c <> "'"
+
+escapeString :: Text -> Text
+escapeString = T.concatMap escapeStringChar
+  where
+    escapeStringChar '"'  = "\\\""
+    escapeStringChar '\\' = "\\\\"
+    escapeStringChar '\n' = "\\n"
+    escapeStringChar '\t' = "\\t"
+    escapeStringChar c    = T.singleton c
+
+escapeChar :: Char -> Text
+escapeChar '\'' = "\\'"
+escapeChar '\\' = "\\\\"
+escapeChar '\n' = "\\n"
+escapeChar '\t' = "\\t"
+escapeChar c    = T.singleton c
+
+-- Pattern printers
+
+printPat :: Pat -> Text
+printPat (VarPat (Name n)) = n
+printPat (LitPat l) = printLit l
+printPat WildPat = "_"
+printPat (ConPat (Name n) []) = n
+printPat (ConPat (Name n) args) = n <> " " <> T.intercalate " " (map printPatAtom args)
+
+printPatAtom :: Pat -> Text
+printPatAtom p@(ConPat _ (_:_)) = "(" <> printPat p <> ")"
+printPatAtom p = printPat p

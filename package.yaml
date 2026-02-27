@@ -1,0 +1,55 @@
+name:                purekell
+version:             0.1.0.0
+homepage:            https://github.com/githubuser/purekell#readme
+license:             Apache-2.0
+author:              Author name here
+maintainer:          example@example.com
+copyright:           2026 Author name here
+category:            Web
+extra-source-files:
+- README.md
+- CHANGELOG.md
+
+dependencies:
+- base >= 4.7 && < 5
+- text
+- megaparsec
+- containers
+
+ghc-options:
+- -Wall
+- -Wcompat
+- -Widentities
+- -Wincomplete-record-updates
+- -Wincomplete-uni-patterns
+- -Wmissing-home-modules
+- -Wpartial-fields
+- -Wredundant-constraints
+
+library:
+  source-dirs: src
+  exposed-modules:
+  - Purekell
+  - Purekell.AST
+  - Purekell.Codec
+  - Purekell.Haskell
+  - Purekell.Parser
+  - Purekell.Printer
+  - Purekell.PureScript
+  - Purekell.Instance
+
+tests:
+  purekell-test:
+    main: Spec.hs
+    source-dirs: test
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - purekell
+    - hspec
+    - QuickCheck
+    - hspec-discover
+
+github: githubuser/purekell
