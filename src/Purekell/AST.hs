@@ -52,6 +52,7 @@ data Expr
   | Do [Stmt]
   | Neg Expr               -- ^ Prefix negation: -expr
   | RecordAccess Expr Name  -- ^ Record field access: rec.field (PS) / field rec (HS)
+  | Tuple [Expr]            -- ^ Tuple literal (≥2 elements)
   deriving (Eq, Show, Generic)
 
 data Pat
@@ -59,4 +60,5 @@ data Pat
   | ConPat Name [Pat]
   | LitPat Lit
   | WildPat
+  | TuplePat [Pat]          -- ^ Tuple pattern (≥2 elements)
   deriving (Eq, Show, Generic)

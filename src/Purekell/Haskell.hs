@@ -23,4 +23,4 @@ haskellExpr :: Codec Expr
 haskellExpr = Codec { codecParser = sc *> epExpr hsParsers <* eof, codecPrinter = printExpr Haskell }
 
 haskellPat :: Codec Pat
-haskellPat = Codec { codecParser = sc *> pPat <* eof, codecPrinter = printPat }
+haskellPat = Codec { codecParser = sc *> pPat <* eof, codecPrinter = printPat Haskell }

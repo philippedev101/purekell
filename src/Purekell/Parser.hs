@@ -87,8 +87,18 @@ pAtomPat = choice
   , WildPat <$ lexeme (char '_' <* notFollowedBy (alphaNumChar <|> char '_' <|> char '\''))
   , ConPat <$> pUpperName <*> pure []
   , VarPat <$> pLowerName
-  , between (symbol "(") (symbol ")") pPat
+  , pParenOrTuplePat
   ]
+
+pParenOrTuplePat :: Parser Pat
+pParenOrTuplePat = do
+  _ <- symbol "("
+  p <- pPat
+  rest <- many (symbol "," *> pPat)
+  _ <- symbol ")"
+  pure $ case rest of
+    [] -> p
+    _  -> TuplePat (p : rest)
 
 pConPat :: Parser Pat
 pConPat = ConPat <$> pUpperName <*> many pAtomPat
@@ -112,8 +122,16 @@ mkExprParsers wrapAtom = ExprParsers { epExpr = expr, epGuard = guard }
       [ Literal <$> pLit
       , Con <$> pUpperName
       , Var <$> pLowerName
-      , between (symbol "(") (symbol ")") expr
+      , pParenOrTuple
       ]
+    pParenOrTuple = do
+      _ <- symbol "("
+      e <- expr
+      rest <- many (symbol "," *> expr)
+      _ <- symbol ")"
+      pure $ case rest of
+        [] -> e
+        _  -> Tuple (e : rest)
     wrappedAtom = wrapAtom atom
     appExpr = do
       f <- wrappedAtom

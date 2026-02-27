@@ -6,7 +6,7 @@ import Test.Hspec
 import Test.QuickCheck
 
 import Purekell.AST
-import Purekell.Arbitrary (noRecordAccess)
+import Purekell.Arbitrary (noRecordAccess, noTuple, noTuplePat)
 import Purekell.Codec (roundtrip, runParse, runPrint)
 import Purekell.Haskell (haskellExpr, haskellLit, haskellPat)
 import Purekell.PureScript (purescriptExpr, purescriptLit, purescriptPat)
@@ -28,14 +28,14 @@ spec = do
       it "lit roundtrips" $ property $ \lit ->
         roundtrip purescriptLit lit === Right (lit :: Lit)
 
-      it "expr roundtrips" $ property $ \expr ->
+      it "expr roundtrips" $ property $ forAll (arbitrary `suchThat` noTuple) $ \expr ->
         roundtrip purescriptExpr expr === Right (expr :: Expr)
 
-      it "pat roundtrips" $ property $ \pat ->
+      it "pat roundtrips" $ property $ forAll (arbitrary `suchThat` noTuplePat) $ \pat ->
         roundtrip purescriptPat pat === Right (pat :: Pat)
 
     describe "Cross-language" $ do
-      it "Haskell expr -> PureScript expr -> Haskell expr" $ property $ forAll (arbitrary `suchThat` noRecordAccess) $ \expr ->
+      it "Haskell expr -> PureScript expr -> Haskell expr" $ property $ forAll (arbitrary `suchThat` (\e -> noRecordAccess e && noTuple e)) $ \expr ->
         let hsText = runPrint haskellExpr expr
         in case runParse purescriptExpr hsText of
              Left err -> counterexample (show err) False
@@ -109,7 +109,7 @@ spec = do
           Right (Case (Var (Name "x")) [CaseAlt (LitPat (FloatLit 3.14)) [] (Var (Name "y"))])
 
     describe "Cross-language" $ do
-      it "Haskell pat -> PureScript pat -> Haskell pat" $ property $ \pat ->
+      it "Haskell pat -> PureScript pat -> Haskell pat" $ property $ forAll (arbitrary `suchThat` noTuplePat) $ \pat ->
         let hsText = runPrint haskellPat (pat :: Pat)
         in case runParse purescriptPat hsText of
              Left err -> counterexample (show err) False

@@ -52,5 +52,5 @@ printMethodEq target (MethodEquation (Name name) pats guards body) =
   where
     patsText
       | null pats = ""
-      | otherwise = " " <> T.intercalate " " (map printPatAtom pats)
+      | otherwise = " " <> T.intercalate " " (map (printPatAtom target) pats)
     guardsText = printGuards target guards

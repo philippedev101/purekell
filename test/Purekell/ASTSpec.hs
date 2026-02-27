@@ -44,3 +44,4 @@ spec = do
           Do {} -> True
           Neg {} -> True
           RecordAccess {} -> True
+          Tuple {} -> True

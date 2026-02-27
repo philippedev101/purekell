@@ -5,6 +5,8 @@ module Purekell.Arbitrary
   ( genIdent
   , genUpperIdent
   , noRecordAccess
+  , noTuple
+  , noTuplePat
   ) where
 
 import Data.Text (Text)
@@ -114,6 +116,9 @@ instance Arbitrary Expr where
                  pure (Do stmts))
         , (1, Neg <$> go half)
         , (1, RecordAccess <$> go half <*> (Name <$> genIdent))
+        , (1, do numElems <- choose (2, 3)
+                 Tuple <$> vectorOf numElems (go (n `div` (numElems + 1))))
+
         ]
         where
           half = n `div` 2
@@ -128,6 +133,7 @@ instance Arbitrary Expr where
   shrink (Do stmts) = [e | StmtExpr e <- stmts]
   shrink (Neg e) = e : [Neg e' | e' <- shrink e]
   shrink (RecordAccess rec _) = [rec]
+  shrink (Tuple es) = es
   shrink _ = []
 
 instance Arbitrary Pat where
@@ -145,10 +151,13 @@ instance Arbitrary Pat where
              numArgs <- choose (1, 3)
              args <- vectorOf numArgs (go (n `div` (numArgs + 1)))
              pure (ConPat con args)
+        , do numElems <- choose (2, 3)
+             TuplePat <$> vectorOf numElems (go (n `div` (numElems + 1)))
         ]
 
   shrink (ConPat n args) = [ConPat n (take i args) | i <- [0 .. length args - 1]]
                         ++ [ConPat n args' | args' <- shrinkList shrink args]
+  shrink (TuplePat ps) = ps ++ [TuplePat ps' | ps' <- shrinkList shrink ps, length ps' >= 2]
   shrink _ = []
 
 -- | Check recursively that an expression tree contains no RecordAccess.
@@ -170,7 +179,35 @@ noRecordAccess (Do stmts) = all stmtOk stmts
   where stmtOk (StmtBind _ e) = noRecordAccess e
         stmtOk (StmtExpr e) = noRecordAccess e
         stmtOk (StmtLet bs) = all (\(Binding _ e) -> noRecordAccess e) bs
+noRecordAccess (Tuple es) = all noRecordAccess es
 noRecordAccess _ = True
+
+-- | Check recursively that an expression tree contains no Tuple.
+-- Tuple doesn't roundtrip in PureScript (prints as App (Con "Tuple") ...).
+noTuple :: Expr -> Bool
+noTuple (Tuple _) = False
+noTuple (Neg e) = noTuple e
+noTuple (RecordAccess e _) = noTuple e
+noTuple (App f x) = noTuple f && noTuple x
+noTuple (InfixApp l _ r) = noTuple l && noTuple r
+noTuple (Lam ps e) = all noTuplePat ps && noTuple e
+noTuple (If c t e) = noTuple c && noTuple t && noTuple e
+noTuple (Case scrut alts) = noTuple scrut && all altOk alts
+  where altOk (CaseAlt p gs e) = noTuplePat p && all guardOk gs && noTuple e
+        guardOk (Guard e) = noTuple e
+noTuple (Let bs e) = all bindOk bs && noTuple e
+  where bindOk (Binding p e') = noTuplePat p && noTuple e'
+noTuple (Do stmts) = all stmtOk stmts
+  where stmtOk (StmtBind p e) = noTuplePat p && noTuple e
+        stmtOk (StmtExpr e) = noTuple e
+        stmtOk (StmtLet bs) = all (\(Binding p e) -> noTuplePat p && noTuple e) bs
+noTuple _ = True
+
+-- | Check that a pattern contains no TuplePat (and no Tuple in nested expressions).
+noTuplePat :: Pat -> Bool
+noTuplePat (TuplePat _) = False
+noTuplePat (ConPat _ args) = all noTuplePat args
+noTuplePat _ = True
 
 instance Arbitrary MethodEquation where
   arbitrary = sized $ \n -> do

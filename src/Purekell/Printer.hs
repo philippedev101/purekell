@@ -36,7 +36,7 @@ printExpr t (App f x) = printAppFun t f <> " " <> printAtom t x
 printExpr t (InfixApp l (Name op) r) =
   printInfixArg t l <> " " <> op <> " " <> printInfixArg t r
 printExpr t (Lam pats body) =
-  "\\" <> T.intercalate " " (map printPatAtom pats) <> " -> " <> printExpr t body
+  "\\" <> T.intercalate " " (map (printPatAtom t) pats) <> " -> " <> printExpr t body
 printExpr t (If c th el) =
   "if " <> printExpr t c <> " then " <> printExpr t th <> " else " <> printExpr t el
 printExpr t (Case scrut alts) =
@@ -53,10 +53,20 @@ printExpr Haskell (RecordAccess rec (Name field)) =
   field <> " " <> printAtom Haskell rec
 printExpr PureScript (RecordAccess rec (Name field)) =
   printAtom PureScript rec <> "." <> field
+printExpr Haskell (Tuple es) =
+  "(" <> T.intercalate ", " (map (printExpr Haskell) es) <> ")"
+printExpr PureScript (Tuple [a, b]) =
+  "Tuple " <> printAtom PureScript a <> " " <> printAtom PureScript b
+printExpr PureScript (Tuple (a : rest)) =
+  "Tuple " <> printAtom PureScript a <> " " <> printAtom PureScript (Tuple rest)
+printExpr PureScript (Tuple []) =
+  error "Tuple must have at least 2 elements"
 
 -- Parenthesization helpers
 
 isCompound :: Target -> Expr -> Bool
+isCompound Haskell    (Tuple {}) = False
+isCompound PureScript (Tuple {}) = True
 isCompound _ (Neg {})  = True
 isCompound Haskell    (RecordAccess {}) = True
 isCompound PureScript (RecordAccess {}) = False
@@ -108,13 +118,13 @@ printGuards t gs = " " <> T.intercalate " " (map (printGuard t) gs)
 
 printCaseAlt :: Target -> CaseAlt -> Text
 printCaseAlt t (CaseAlt pat guards body) =
-  printPat pat <> printGuards t guards <> " -> " <> printExpr t body
+  printPat t pat <> printGuards t guards <> " -> " <> printExpr t body
 
 printBinding :: Target -> Binding -> Text
-printBinding t (Binding pat body) = printPat pat <> " = " <> printExpr t body
+printBinding t (Binding pat body) = printPat t pat <> " = " <> printExpr t body
 
 printStmt :: Target -> Stmt -> Text
-printStmt t (StmtBind pat body) = printPat pat <> " <- " <> printExpr t body
+printStmt t (StmtBind pat body) = printPat t pat <> " <- " <> printExpr t body
 printStmt t (StmtExpr e) = printExpr t e
 printStmt t (StmtLet bindings) =
   "let { " <> T.intercalate "; " (map (printBinding t) bindings) <> " }"
@@ -145,13 +155,24 @@ escapeChar c    = T.singleton c
 
 -- Pattern printers
 
-printPat :: Pat -> Text
-printPat (VarPat (Name n)) = n
-printPat (LitPat l) = printLit l
-printPat WildPat = "_"
-printPat (ConPat (Name n) []) = n
-printPat (ConPat (Name n) args) = n <> " " <> T.intercalate " " (map printPatAtom args)
+printPat :: Target -> Pat -> Text
+printPat _ (VarPat (Name n)) = n
+printPat _ (LitPat l) = printLit l
+printPat _ WildPat = "_"
+printPat _ (ConPat (Name n) []) = n
+printPat t (ConPat (Name n) args) = n <> " " <> T.intercalate " " (map (printPatAtom t) args)
+printPat Haskell (TuplePat ps) =
+  "(" <> T.intercalate ", " (map (printPat Haskell) ps) <> ")"
+printPat PureScript (TuplePat [a, b]) =
+  "Tuple " <> printPatAtom PureScript a <> " " <> printPatAtom PureScript b
+printPat PureScript (TuplePat (a : rest)) =
+  "Tuple " <> printPatAtom PureScript a <> " " <> printPatAtom PureScript (TuplePat rest)
+printPat PureScript (TuplePat []) =
+  error "TuplePat must have at least 2 elements"
 
-printPatAtom :: Pat -> Text
-printPatAtom p@(ConPat _ (_:_)) = "(" <> printPat p <> ")"
-printPatAtom p = printPat p
+printPatAtom :: Target -> Pat -> Text
+printPatAtom t p@(ConPat _ (_:_)) = "(" <> printPat t p <> ")"
+printPatAtom t p@(TuplePat _) = case t of
+  Haskell    -> printPat t p  -- already parenthesized
+  PureScript -> "(" <> printPat t p <> ")"
+printPatAtom t p = printPat t p

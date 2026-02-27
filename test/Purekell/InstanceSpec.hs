@@ -6,7 +6,7 @@ import Test.Hspec
 import Test.QuickCheck
 
 import Purekell.AST
-import Purekell.Arbitrary (noRecordAccess)
+import Purekell.Arbitrary (noRecordAccess, noTuple, noTuplePat)
 import Purekell.Instance
 
 spec :: Spec
@@ -89,10 +89,14 @@ spec = do
     describe "Roundtrip" $ do
       let noRA (MethodEquation _ _ gs body) =
             noRecordAccess body && all (\(Guard e) -> noRecordAccess e) gs
+      let noPsTuple (MethodEquation _ pats gs body) =
+            noRA (MethodEquation (Name "") [] gs body)
+            && noTuple body && all (\(Guard e) -> noTuple e) gs
+            && all noTuplePat pats
       it "Haskell printMethodBody roundtrips" $ property $
         forAll (arbitrary `suchThat` noRA) $ \eq ->
           parseMethodBody (printMethodBody Haskell [eq]) === Right [eq :: MethodEquation]
 
       it "PureScript printMethodBody roundtrips" $ property $
-        forAll (arbitrary `suchThat` noRA) $ \eq ->
+        forAll (arbitrary `suchThat` noPsTuple) $ \eq ->
           parseMethodBody (printMethodBody PureScript [eq]) === Right [eq :: MethodEquation]

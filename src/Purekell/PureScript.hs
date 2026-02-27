@@ -34,4 +34,4 @@ purescriptExpr :: Codec Expr
 purescriptExpr = Codec { codecParser = sc *> epExpr psParsers <* eof, codecPrinter = printExpr PureScript }
 
 purescriptPat :: Codec Pat
-purescriptPat = Codec { codecParser = sc *> pPat <* eof, codecPrinter = printPat }
+purescriptPat = Codec { codecParser = sc *> pPat <* eof, codecPrinter = printPat PureScript }
