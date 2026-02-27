@@ -43,6 +43,19 @@ genOperator :: Gen Name
 genOperator = Name <$> elements
   ["==", "/=", "<", ">", "<=", ">=", "<>", "&&", "||", "+", "*"]
 
+instance Arbitrary Type where
+  arbitrary = sized go
+    where
+      go 0 = oneof [TyCon . Name <$> genUpperIdent, TyVar <$> arbitrary]
+      go n = oneof
+        [ go 0
+        , TyApp <$> go (n `div` 2) <*> go (n `div` 2)
+        , TyFun <$> go (n `div` 2) <*> go (n `div` 2)
+        ]
+  shrink (TyApp f x) = [f, x]
+  shrink (TyFun a b) = [a, b]
+  shrink _ = []
+
 instance Arbitrary Name where
   arbitrary = Name <$> genIdent
 
@@ -128,6 +141,10 @@ instance Arbitrary Expr where
                  bindings <- vectorOf numBinds (resize half arbitrary)
                  body <- go half
                  pure (Where body bindings))
+        , (1, Ann <$> go half <*> resize half arbitrary)
+        , (1, do numFields <- choose (1, 2)
+                 fields <- vectorOf numFields ((,) <$> (Name <$> genIdent) <*> go (n `div` (numFields + 1)))
+                 RecordUpdate <$> go half <*> pure fields)
         ]
         where
           half = n `div` 2
@@ -147,6 +164,8 @@ instance Arbitrary Expr where
   shrink (LeftSection e _) = [e]
   shrink (RightSection _ e) = [e]
   shrink (Where e bs) = [e] ++ [Where e bs' | bs' <- shrinkList shrink bs, not (null bs')]
+  shrink (Ann e _) = [e]
+  shrink (RecordUpdate e _) = [e]
   shrink _ = []
 
 instance Arbitrary Pat where
@@ -210,6 +229,8 @@ noRecordAccess (LeftSection e _) = noRecordAccess e
 noRecordAccess (RightSection _ e) = noRecordAccess e
 noRecordAccess (Where e bs) = noRecordAccess e && all bindOk bs
   where bindOk (Binding p e') = noRecordAccessPat p && noRecordAccess e'
+noRecordAccess (Ann e _) = noRecordAccess e
+noRecordAccess (RecordUpdate e fields) = noRecordAccess e && all (\(_, v) -> noRecordAccess v) fields
 noRecordAccess _ = True
 
 noRecordAccessPat :: Pat -> Bool
@@ -244,6 +265,8 @@ noTuple (LeftSection e _) = noTuple e
 noTuple (RightSection _ e) = noTuple e
 noTuple (Where e bs) = noTuple e && all bindOk bs
   where bindOk (Binding p e') = noTuplePat p && noTuple e'
+noTuple (Ann e _) = noTuple e
+noTuple (RecordUpdate e fields) = noTuple e && all (\(_, v) -> noTuple v) fields
 noTuple _ = True
 
 -- | Check that a pattern contains no TuplePat (and no Tuple in nested expressions).
@@ -280,6 +303,8 @@ noConsExpr (LeftSection e _) = noConsExpr e
 noConsExpr (RightSection _ e) = noConsExpr e
 noConsExpr (Where e bs) = noConsExpr e && all bindOk bs
   where bindOk (Binding p e') = noConsPat p && noConsExpr e'
+noConsExpr (Ann e _) = noConsExpr e
+noConsExpr (RecordUpdate e fields) = noConsExpr e && all (\(_, v) -> noConsExpr v) fields
 noConsExpr _ = True
 
 -- | Check that a pattern contains no ConsPat.

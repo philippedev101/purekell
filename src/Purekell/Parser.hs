@@ -14,6 +14,7 @@ module Purekell.Parser
   , pAtomPat
   , pConPat
   , pPat
+  , pType
   ) where
 
 import Data.Text (Text)
@@ -77,7 +78,7 @@ pOperator :: Parser Name
 pOperator = lexeme $ try $ do
   op <- some (oneOf ("!#$%&*+./<=>?@\\^|-~:" :: [Char]))
   let n = T.pack op
-  if n `elem` ["->", "|", "<-", "="] then fail "reserved operator" else pure (Name n)
+  if n `elem` ["->", "|", "<-", "=", "::"] then fail "reserved operator" else pure (Name n)
 
 -- Pattern parsers
 
@@ -126,6 +127,35 @@ pPat = do
     Nothing -> left
     Just r  -> ConsPat left r
 
+-- Type parsers
+
+pType :: Parser Type
+pType = pTyFun
+
+pTyFun :: Parser Type
+pTyFun = do
+  t <- pTyApp
+  rest <- optional (symbol "->" *> pTyFun)  -- right-associative
+  pure $ case rest of
+    Nothing -> t
+    Just r  -> TyFun t r
+
+pTyApp :: Parser Type
+pTyApp = do
+  f <- pTyAtom
+  args <- many pTyAtom
+  pure (foldl TyApp f args)
+
+pTyAtom :: Parser Type
+pTyAtom = choice
+  [ TyCon <$> pUpperName
+  , TyVar <$> pLowerName
+  , symbol "(" *> pType <* symbol ")"
+  ]
+
+pDoubleColon :: Parser ()
+pDoubleColon = () <$ lexeme (try (string "::" <* notFollowedBy (oneOf ("!#$%&*+./<=>?@\\^|-~:" :: [Char]))))
+
 -- Expression parsers
 
 data ExprParsers = ExprParsers
@@ -133,10 +163,11 @@ data ExprParsers = ExprParsers
   , epGuard :: Parser Guard
   }
 
--- | Build expression parsers. The wrapper transforms the atom parser
--- (identity for Haskell, dot-access chaining for PureScript).
-mkExprParsers :: (Parser Expr -> Parser Expr) -> ExprParsers
-mkExprParsers wrapAtom = ExprParsers { epExpr = expr, epGuard = guard }
+-- | Build expression parsers. The postfix callback adds extra postfix
+-- operations after each atom (identity for Haskell, dot-access chaining
+-- for PureScript). It interleaves with record update parsing.
+mkExprParsers :: (Expr -> Parser Expr) -> ExprParsers
+mkExprParsers postfix = ExprParsers { epExpr = expr, epGuard = guard }
   where
     atom = choice
       [ Literal <$> pLit
@@ -149,7 +180,7 @@ mkExprParsers wrapAtom = ExprParsers { epExpr = expr, epGuard = guard }
     pNonMinusOp = lexeme $ try $ do
       op <- some (oneOf ("!#$%&*+./<=>?@\\^|-~:" :: [Char]))
       let n = T.pack op
-      if n `elem` ["->", "|", "<-", "=", "-"] then fail "reserved/excluded operator" else pure (Name n)
+      if n `elem` ["->", "|", "<-", "=", "-", "::"] then fail "reserved/excluded operator" else pure (Name n)
     pParenOrTupleOrSection = do
       _ <- symbol "("
       choice
@@ -160,10 +191,11 @@ mkExprParsers wrapAtom = ExprParsers { epExpr = expr, epGuard = guard }
              choice
                [ -- Left section: expr op )
                  try (LeftSection e <$> pOperator <* symbol ")")
-               , -- Infix continuation → then optional where, then tuple or grouping
+               , -- Infix continuation → then optional ann, then optional where, then tuple or grouping
                  do rest <- many ((,) <$> pOperator <*> prefixExpr)
                     let infE = foldl (\l (op, r) -> InfixApp l op r) e rest
-                    fullE <- pOptionalWhere infE
+                    annE <- pOptionalAnn infE
+                    fullE <- pOptionalWhere annE
                     choice
                       [ Tuple . (fullE :) <$> some (symbol "," *> expr) <* symbol ")"
                       , fullE <$ symbol ")"
@@ -171,16 +203,24 @@ mkExprParsers wrapAtom = ExprParsers { epExpr = expr, epGuard = guard }
                ]
         , -- Non-prefix expressions (lambda, if, case, let, do) inside parens
           do e <- lam <|> try ifE <|> try caseE <|> try letE <|> try doE
-             e' <- pOptionalWhere e
+             e1 <- pOptionalAnn e
+             e' <- pOptionalWhere e1
              choice
                [ Tuple . (e' :) <$> some (symbol "," *> expr) <* symbol ")"
                , e' <$ symbol ")"
                ]
         ]
-    wrappedAtom = wrapAtom atom
+    fieldAssign = (,) <$> pLowerName <*> (symbol "=" *> expr)
+    postfixChain e = do
+      e1 <- postfix e
+      updates <- many (try (symbol "{" *> fieldAssign `sepBy1` symbol "," <* symbol "}"))
+      case updates of
+        [] -> pure e1
+        _  -> postfixChain (foldl RecordUpdate e1 updates)
+    atomWithPostfix = atom >>= postfixChain
     appExpr = do
-      f <- wrappedAtom
-      args <- many wrappedAtom
+      f <- atomWithPostfix
+      args <- many atomWithPostfix
       pure (foldl App f args)
     pPrefixMinus = lexeme (try (char '-' <* notFollowedBy (oneOf ("!#$%&*+./<=>?@\\^|-~:" :: [Char]))))
     prefixExpr = (Neg <$> (pPrefixMinus *> appExpr)) <|> appExpr
@@ -188,6 +228,12 @@ mkExprParsers wrapAtom = ExprParsers { epExpr = expr, epGuard = guard }
       first <- prefixExpr
       rest <- many ((,) <$> pOperator <*> prefixExpr)
       pure (foldl (\l (op, r) -> InfixApp l op r) first rest)
+    pOptionalAnn e = do
+      mty <- optional (pDoubleColon *> pType)
+      pure $ case mty of
+        Nothing -> e
+        Just ty -> Ann e ty
+    annExpr = infixExpr >>= pOptionalAnn
     guard = symbol "|" *> (Guard <$> infixExpr)
     lam = Lam <$> (symbol "\\" *> some pAtomPat) <*> (symbol "->" *> expr)
     ifE = If <$> (keyword "if" *> expr) <*> (keyword "then" *> expr) <*> (keyword "else" *> expr)
@@ -208,5 +254,5 @@ mkExprParsers wrapAtom = ExprParsers { epExpr = expr, epGuard = guard }
       pure $ case mbs of
         Nothing -> e
         Just bs -> Where e bs
-    whereExpr = infixExpr >>= pOptionalWhere
+    whereExpr = annExpr >>= pOptionalWhere
     expr = lam <|> try ifE <|> try caseE <|> try letE <|> try doE <|> whereExpr

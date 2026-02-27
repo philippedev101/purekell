@@ -49,3 +49,5 @@ spec = do
           LeftSection {} -> True
           RightSection {} -> True
           Where {} -> True
+          Ann {} -> True
+          RecordUpdate {} -> True

@@ -15,6 +15,7 @@ module Purekell.Printer
   , printCaseAlt
   , printBinding
   , printStmt
+  , printType
   ) where
 
 import Data.Text (Text)
@@ -67,6 +68,11 @@ printExpr t (LeftSection e (Name op)) = "(" <> printInfixArg t e <> " " <> op <>
 printExpr t (RightSection (Name op) e) = "(" <> op <> " " <> printInfixArg t e <> ")"
 printExpr t (Where e bs) =
   printInfixLevel t e <> " where { " <> T.intercalate "; " (map (printBinding t) bs) <> " }"
+printExpr t (Ann e ty) =
+  printInfixLevel t e <> " :: " <> printType ty
+printExpr t (RecordUpdate e fields) =
+  printAtom t e <> " { " <> T.intercalate ", " (map printField fields) <> " }"
+  where printField (Name n, val) = n <> " = " <> printExpr t val
 
 -- Parenthesization helpers
 
@@ -87,6 +93,7 @@ isCompound _ (Case {})     = True
 isCompound _ (Let {})      = True
 isCompound _ (Do {})       = True
 isCompound _ (Where {})    = True
+isCompound _ (Ann {})      = True
 isCompound _ _             = False
 
 printAtom :: Target -> Expr -> Text
@@ -108,6 +115,7 @@ printInfixArg t e@(Case {})     = "(" <> printExpr t e <> ")"
 printInfixArg t e@(Let {})      = "(" <> printExpr t e <> ")"
 printInfixArg t e@(Do {})       = "(" <> printExpr t e <> ")"
 printInfixArg t e@(Where {})    = "(" <> printExpr t e <> ")"
+printInfixArg t e@(Ann {})      = "(" <> printExpr t e <> ")"
 printInfixArg t e               = printExpr t e
 
 printInfixLevel :: Target -> Expr -> Text
@@ -117,6 +125,7 @@ printInfixLevel t e@(Case {}) = "(" <> printExpr t e <> ")"
 printInfixLevel t e@(Let {})  = "(" <> printExpr t e <> ")"
 printInfixLevel t e@(Do {})   = "(" <> printExpr t e <> ")"
 printInfixLevel t e@(Where {}) = "(" <> printExpr t e <> ")"
+printInfixLevel t e@(Ann {})   = "(" <> printExpr t e <> ")"
 printInfixLevel t e           = printExpr t e
 
 -- Guard / case alt / binding / stmt printers
@@ -140,6 +149,27 @@ printStmt t (StmtBind pat body) = printPat t pat <> " <- " <> printExpr t body
 printStmt t (StmtExpr e) = printExpr t e
 printStmt t (StmtLet bindings) =
   "let { " <> T.intercalate "; " (map (printBinding t) bindings) <> " }"
+
+-- Type printer
+
+printType :: Type -> Text
+printType (TyCon (Name n)) = n
+printType (TyVar (Name n)) = n
+printType (TyApp f x) = printTyAppFun f <> " " <> printTyAtom x
+printType (TyFun a b) = printTyFunArg a <> " -> " <> printType b
+
+printTyAtom :: Type -> Text
+printTyAtom ty@(TyApp {}) = "(" <> printType ty <> ")"
+printTyAtom ty@(TyFun {}) = "(" <> printType ty <> ")"
+printTyAtom ty = printType ty
+
+printTyAppFun :: Type -> Text
+printTyAppFun ty@(TyFun {}) = "(" <> printType ty <> ")"
+printTyAppFun ty = printType ty
+
+printTyFunArg :: Type -> Text
+printTyFunArg ty@(TyFun {}) = "(" <> printType ty <> ")"
+printTyFunArg ty = printType ty
 
 -- Literal printer
 

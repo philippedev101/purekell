@@ -14,7 +14,7 @@ import Purekell.Parser (ExprParsers (..), mkExprParsers, pLit, pPat, sc)
 import Purekell.Printer (Target (..), printExpr, printLit, printPat)
 
 hsParsers :: ExprParsers
-hsParsers = mkExprParsers id
+hsParsers = mkExprParsers pure
 
 haskellLit :: Codec Lit
 haskellLit = Codec { codecParser = pLit <* eof, codecPrinter = printLit }

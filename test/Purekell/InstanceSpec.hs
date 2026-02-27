@@ -182,6 +182,30 @@ spec = do
           Left err -> expectationFailure (show err)
           Right eqs -> printMethodBody Haskell eqs `shouldBe` input
 
+    describe "Type annotation in method body" $ do
+      it "prints and roundtrips type annotation in method body" $ do
+        let input = "f x = x :: Int"
+        case parseMethodBody input of
+          Left err -> expectationFailure (show err)
+          Right eqs -> printMethodBody Haskell eqs `shouldBe` input
+
+      it "prints type annotation for PureScript" $ do
+        let eq = MethodEquation (Name "f") [VarPat (Name "x")] []
+                   (Ann (Var (Name "x")) (TyCon (Name "Int")))
+        printMethodBody PureScript [eq] `shouldBe` "f x = x :: Int"
+
+    describe "Record update in method body" $ do
+      it "prints and roundtrips record update in method body" $ do
+        let input = "f x = x { y = 1 }"
+        case parseMethodBody input of
+          Left err -> expectationFailure (show err)
+          Right eqs -> printMethodBody Haskell eqs `shouldBe` input
+
+      it "prints record update for PureScript" $ do
+        let eq = MethodEquation (Name "f") [VarPat (Name "x")] []
+                   (RecordUpdate (Var (Name "x")) [(Name "y", Literal (IntLit 1))])
+        printMethodBody PureScript [eq] `shouldBe` "f x = x { y = 1 }"
+
     describe "Roundtrip" $ do
       let noRA (MethodEquation _ _ gs body) =
             noRecordAccess body && all (\(Guard e) -> noRecordAccess e) gs

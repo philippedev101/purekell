@@ -9,6 +9,7 @@ module Purekell.AST
   , CaseAlt (..)
   , Binding (..)
   , Stmt (..)
+  , Type (..)
   ) where
 
 import Data.Text (Text)
@@ -57,6 +58,8 @@ data Expr
   | LeftSection Expr Name   -- ^ Left operator section: (expr op)
   | RightSection Name Expr  -- ^ Right operator section: (op expr)
   | Where Expr [Binding]    -- ^ Where clause: expr where { pat = expr; ... }
+  | Ann Expr Type           -- ^ Type annotation: expr :: Type
+  | RecordUpdate Expr [(Name, Expr)]  -- ^ Record update: rec { field = val, ... }
   deriving (Eq, Show, Generic)
 
 data Pat
@@ -69,4 +72,11 @@ data Pat
   | ConsPat Pat Pat          -- ^ Cons pattern: x : xs (HS) / Cons x xs (PS)
   | AsPat Name Pat           -- ^ As-pattern: name@pat
   | NegLitPat Lit            -- ^ Negated literal pattern: -42, -3.14
+  deriving (Eq, Show, Generic)
+
+data Type
+  = TyCon Name           -- ^ Named type: Int, Bool, Maybe
+  | TyVar Name           -- ^ Type variable: a, b
+  | TyApp Type Type      -- ^ Type application: Maybe a
+  | TyFun Type Type      -- ^ Function type: a -> b
   deriving (Eq, Show, Generic)

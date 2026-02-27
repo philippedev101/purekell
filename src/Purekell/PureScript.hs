@@ -18,9 +18,8 @@ import Purekell.Printer (Target (..), printExpr, printLit, printPat)
 
 type Parser = Parsec Void Text
 
-pDotAccess :: Parser Expr -> Parser Expr
-pDotAccess atomP = do
-  e <- atomP
+pDotAccess :: Expr -> Parser Expr
+pDotAccess e = do
   fields <- many (char '.' *> pLowerName)
   pure (foldl RecordAccess e fields)
 

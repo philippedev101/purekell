@@ -583,3 +583,154 @@ spec = do
               , Binding (VarPat (Name "y")) (Literal (IntLit 2))
               ]
         in roundtrip haskellExpr ast `shouldBe` Right ast
+
+    describe "Type annotations" $ do
+      it "parses x :: Int" $
+        runParse haskellExpr "x :: Int" `shouldBe`
+          Right (Ann (Var (Name "x")) (TyCon (Name "Int")))
+
+      it "parses f x :: Maybe Int" $
+        runParse haskellExpr "f x :: Maybe Int" `shouldBe`
+          Right (Ann (App (Var (Name "f")) (Var (Name "x"))) (TyApp (TyCon (Name "Maybe")) (TyCon (Name "Int"))))
+
+      it "parses x :: a -> b" $
+        runParse haskellExpr "x :: a -> b" `shouldBe`
+          Right (Ann (Var (Name "x")) (TyFun (TyVar (Name "a")) (TyVar (Name "b"))))
+
+      it "prints Ann" $
+        runPrint haskellExpr (Ann (Var (Name "x")) (TyCon (Name "Int")))
+          `shouldBe` "x :: Int"
+
+      it "prints Ann as function argument (gets parens)" $
+        let ast = App (Var (Name "f")) (Ann (Var (Name "x")) (TyCon (Name "Int")))
+        in runPrint haskellExpr ast `shouldBe` "f (x :: Int)"
+
+      it "roundtrips x :: Int in Haskell" $
+        let ast = Ann (Var (Name "x")) (TyCon (Name "Int"))
+        in roundtrip haskellExpr ast `shouldBe` Right ast
+
+      it "roundtrips (x + y) :: Int in Haskell" $
+        let ast = Ann (InfixApp (Var (Name "x")) (Name "+") (Var (Name "y"))) (TyCon (Name "Int"))
+        in roundtrip haskellExpr ast `shouldBe` Right ast
+
+      it "roundtrips x :: Int in PureScript" $
+        let ast = Ann (Var (Name "x")) (TyCon (Name "Int"))
+        in roundtrip purescriptExpr ast `shouldBe` Right ast
+
+      it "cross-language roundtrips" $
+        let ast = Ann (Var (Name "x")) (TyCon (Name "Int"))
+            hsText = runPrint haskellExpr ast
+        in case runParse purescriptExpr hsText of
+             Left err -> expectationFailure (show err)
+             Right psExpr ->
+               let psText = runPrint purescriptExpr psExpr
+               in runParse haskellExpr psText `shouldBe` Right ast
+
+      it "in lambda body: \\x -> x :: Int" $
+        runParse haskellExpr "\\x -> x :: Int" `shouldBe`
+          Right (Lam [VarPat (Name "x")] (Ann (Var (Name "x")) (TyCon (Name "Int"))))
+
+      it "nested: (x :: Int) :: Int" $
+        runParse haskellExpr "(x :: Int) :: Int" `shouldBe`
+          Right (Ann (Ann (Var (Name "x")) (TyCon (Name "Int"))) (TyCon (Name "Int")))
+
+      it "type with function arrow: f :: Int -> Bool" $
+        let ast = Ann (Var (Name "f")) (TyFun (TyCon (Name "Int")) (TyCon (Name "Bool")))
+        in roundtrip haskellExpr ast `shouldBe` Right ast
+
+      it "type application: x :: Maybe Int" $
+        let ast = Ann (Var (Name "x")) (TyApp (TyCon (Name "Maybe")) (TyCon (Name "Int")))
+        in roundtrip haskellExpr ast `shouldBe` Right ast
+
+      it "parenthesized type: f :: (a -> b) -> c" $
+        let ast = Ann (Var (Name "f")) (TyFun (TyFun (TyVar (Name "a")) (TyVar (Name "b"))) (TyVar (Name "c")))
+        in roundtrip haskellExpr ast `shouldBe` Right ast
+
+      it "in case scrutinee: case (x :: Int) of { ... }" $
+        runParse haskellExpr "case (x :: Int) of { _ -> y }" `shouldBe`
+          Right (Case (Ann (Var (Name "x")) (TyCon (Name "Int")))
+            [CaseAlt WildPat [] (Var (Name "y"))])
+
+      it "annotation then where: x :: Int where { y = 1 }" $
+        runParse haskellExpr "x :: Int where { y = 1 }" `shouldBe`
+          Right (Where (Ann (Var (Name "x")) (TyCon (Name "Int")))
+            [Binding (VarPat (Name "y")) (Literal (IntLit 1))])
+
+      it ":: is not an operator" $
+        runParse haskellExpr "x :: Int" `shouldBe`
+          Right (Ann (Var (Name "x")) (TyCon (Name "Int")))
+
+    describe "Record updates" $ do
+      it "parses rec { x = 1 }" $
+        runParse haskellExpr "rec { x = 1 }" `shouldBe`
+          Right (RecordUpdate (Var (Name "rec")) [(Name "x", Literal (IntLit 1))])
+
+      it "parses rec { x = 1, y = 2 }" $
+        runParse haskellExpr "rec { x = 1, y = 2 }" `shouldBe`
+          Right (RecordUpdate (Var (Name "rec"))
+            [ (Name "x", Literal (IntLit 1))
+            , (Name "y", Literal (IntLit 2))
+            ])
+
+      it "prints RecordUpdate" $
+        runPrint haskellExpr (RecordUpdate (Var (Name "rec")) [(Name "x", Literal (IntLit 1))])
+          `shouldBe` "rec { x = 1 }"
+
+      it "roundtrips rec { x = 1 } in Haskell" $
+        let ast = RecordUpdate (Var (Name "rec")) [(Name "x", Literal (IntLit 1))]
+        in roundtrip haskellExpr ast `shouldBe` Right ast
+
+      it "roundtrips rec { x = 1, y = 2 } in Haskell" $
+        let ast = RecordUpdate (Var (Name "rec"))
+              [ (Name "x", Literal (IntLit 1))
+              , (Name "y", Literal (IntLit 2))
+              ]
+        in roundtrip haskellExpr ast `shouldBe` Right ast
+
+      it "roundtrips rec { x = 1 } in PureScript" $
+        let ast = RecordUpdate (Var (Name "rec")) [(Name "x", Literal (IntLit 1))]
+        in roundtrip purescriptExpr ast `shouldBe` Right ast
+
+      it "cross-language roundtrips" $
+        let ast = RecordUpdate (Var (Name "rec")) [(Name "x", Literal (IntLit 1))]
+            hsText = runPrint haskellExpr ast
+        in case runParse purescriptExpr hsText of
+             Left err -> expectationFailure (show err)
+             Right psExpr ->
+               let psText = runPrint purescriptExpr psExpr
+               in runParse haskellExpr psText `shouldBe` Right ast
+
+      it "as function argument: f rec { x = 1 } parses as f (RecordUpdate rec ...)" $
+        runParse haskellExpr "f rec { x = 1 }" `shouldBe`
+          Right (App (Var (Name "f")) (RecordUpdate (Var (Name "rec")) [(Name "x", Literal (IntLit 1))]))
+
+      it "with parenthesized base: (f x) { y = 1 }" $
+        let ast = RecordUpdate (App (Var (Name "f")) (Var (Name "x"))) [(Name "y", Literal (IntLit 1))]
+        in roundtrip haskellExpr ast `shouldBe` Right ast
+
+      it "complex field values: rec { x = a + b }" $
+        let ast = RecordUpdate (Var (Name "rec"))
+              [(Name "x", InfixApp (Var (Name "a")) (Name "+") (Var (Name "b")))]
+        in roundtrip haskellExpr ast `shouldBe` Right ast
+
+      it "nested: rec { x = inner { y = 1 } }" $
+        let ast = RecordUpdate (Var (Name "rec"))
+              [(Name "x", RecordUpdate (Var (Name "inner")) [(Name "y", Literal (IntLit 1))])]
+        in roundtrip haskellExpr ast `shouldBe` Right ast
+
+      it "in infix: rec { x = 1 } + y" $
+        runParse haskellExpr "rec { x = 1 } + y" `shouldBe`
+          Right (InfixApp
+            (RecordUpdate (Var (Name "rec")) [(Name "x", Literal (IntLit 1))])
+            (Name "+")
+            (Var (Name "y")))
+
+      it "chained record updates: rec { x = 1 } { y = 2 }" $
+        let ast = RecordUpdate (RecordUpdate (Var (Name "rec")) [(Name "x", Literal (IntLit 1))])
+              [(Name "y", Literal (IntLit 2))]
+        in roundtrip haskellExpr ast `shouldBe` Right ast
+
+      it "in case scrutinee: case rec { x = 1 } of { ... }" $
+        runParse haskellExpr "case rec { x = 1 } of { _ -> y }" `shouldBe`
+          Right (Case (RecordUpdate (Var (Name "rec")) [(Name "x", Literal (IntLit 1))])
+            [CaseAlt WildPat [] (Var (Name "y"))])

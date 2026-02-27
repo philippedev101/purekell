@@ -27,7 +27,7 @@ data MethodEquation = MethodEquation
   } deriving (Eq, Show)
 
 instanceParsers :: ExprParsers
-instanceParsers = mkExprParsers id
+instanceParsers = mkExprParsers pure
 
 pMethodEquation :: Parser MethodEquation
 pMethodEquation = do
