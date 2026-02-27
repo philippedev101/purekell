@@ -108,6 +108,35 @@ spec = do
         runParse haskellExpr "case x of { 3.14 -> y }" `shouldBe`
           Right (Case (Var (Name "x")) [CaseAlt (LitPat (FloatLit 3.14)) [] (Var (Name "y"))])
 
+    describe "Tuple in context" $ do
+      it "parses \\(x, y) -> x" $
+        runParse haskellExpr "\\(x, y) -> x" `shouldBe`
+          Right (Lam [TuplePat [VarPat (Name "x"), VarPat (Name "y")]] (Var (Name "x")))
+
+      it "prints \\(x, y) -> x" $
+        runPrint haskellExpr (Lam [TuplePat [VarPat (Name "x"), VarPat (Name "y")]] (Var (Name "x")))
+          `shouldBe` "\\(x, y) -> x"
+
+      it "parses case p of { (a, b) -> a }" $
+        runParse haskellExpr "case p of { (a, b) -> a }" `shouldBe`
+          Right (Case (Var (Name "p"))
+            [CaseAlt (TuplePat [VarPat (Name "a"), VarPat (Name "b")]) [] (Var (Name "a"))])
+
+      it "prints case with tuple pattern" $
+        runPrint haskellExpr (Case (Var (Name "p"))
+            [CaseAlt (TuplePat [VarPat (Name "a"), VarPat (Name "b")]) [] (Var (Name "a"))])
+          `shouldBe` "case p of { (a, b) -> a }"
+
+      it "roundtrips \\(x, y) -> x + y" $
+        let ast = Lam [TuplePat [VarPat (Name "x"), VarPat (Name "y")]]
+                    (InfixApp (Var (Name "x")) (Name "+") (Var (Name "y")))
+        in roundtrip haskellExpr ast `shouldBe` Right ast
+
+      it "roundtrips case with tuple pattern" $
+        let ast = Case (Var (Name "p"))
+                    [CaseAlt (TuplePat [VarPat (Name "a"), VarPat (Name "b")]) [] (Var (Name "a"))]
+        in roundtrip haskellExpr ast `shouldBe` Right ast
+
     describe "Cross-language" $ do
       it "Haskell pat -> PureScript pat -> Haskell pat" $ property $ forAll (arbitrary `suchThat` noTuplePat) $ \pat ->
         let hsText = runPrint haskellPat (pat :: Pat)
