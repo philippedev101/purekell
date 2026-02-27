@@ -45,6 +45,7 @@ instance Arbitrary Name where
 instance Arbitrary Lit where
   arbitrary = oneof
     [ IntLit . getNonNegative <$> arbitrary
+    , FloatLit <$> (getNonNegative <$> arbitrary) `suchThat` (\d -> not (isNaN d) && not (isInfinite d))
     , StringLit <$> genSafeString
     , CharLit <$> elements (['a'..'z'] ++ ['A'..'Z'] ++ ['0'..'9'])
     ]

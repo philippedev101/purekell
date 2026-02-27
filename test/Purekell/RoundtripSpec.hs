@@ -76,6 +76,38 @@ spec = do
       it "does not treat -> as negation" $
         runParse haskellExpr "\\x -> x" `shouldBe` Right (Lam [VarPat (Name "x")] (Var (Name "x")))
 
+    describe "Float literals" $ do
+      it "parses 3.14 as FloatLit" $
+        runParse haskellExpr "3.14" `shouldBe` Right (Literal (FloatLit 3.14))
+
+      it "parses 0.5 as FloatLit" $
+        runParse haskellExpr "0.5" `shouldBe` Right (Literal (FloatLit 0.5))
+
+      it "parses 1.0e-2 (scientific notation)" $
+        runParse haskellExpr "1.0e-2" `shouldBe` Right (Literal (FloatLit 1.0e-2))
+
+      it "42 remains IntLit (not FloatLit)" $
+        runParse haskellExpr "42" `shouldBe` Right (Literal (IntLit 42))
+
+      it "prints FloatLit 3.14" $
+        runPrint haskellExpr (Literal (FloatLit 3.14)) `shouldBe` "3.14"
+
+      it "parses -3.14 as negated float" $
+        runParse haskellExpr "-3.14" `shouldBe` Right (Neg (Literal (FloatLit 3.14)))
+
+      it "parses x + 3.14" $
+        runParse haskellExpr "x + 3.14" `shouldBe` Right (InfixApp (Var (Name "x")) (Name "+") (Literal (FloatLit 3.14)))
+
+      it "PureScript parses 3.14" $
+        runParse purescriptExpr "3.14" `shouldBe` Right (Literal (FloatLit 3.14))
+
+      it "PureScript prints FloatLit 3.14" $
+        runPrint purescriptExpr (Literal (FloatLit 3.14)) `shouldBe` "3.14"
+
+      it "float literal in pattern" $
+        runParse haskellExpr "case x of { 3.14 -> y }" `shouldBe`
+          Right (Case (Var (Name "x")) [CaseAlt (LitPat (FloatLit 3.14)) [] (Var (Name "y"))])
+
     describe "Cross-language" $ do
       it "Haskell pat -> PureScript pat -> Haskell pat" $ property $ \pat ->
         let hsText = runPrint haskellPat (pat :: Pat)

@@ -19,6 +19,7 @@ newtype Name = Name Text
 
 data Lit
   = IntLit Integer
+  | FloatLit Double
   | StringLit Text
   | CharLit Char
   deriving (Eq, Show, Generic)

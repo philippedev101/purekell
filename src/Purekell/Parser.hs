@@ -44,6 +44,9 @@ keyword w = lexeme (string w *> notFollowedBy (alphaNumChar <|> char '_' <|> cha
 pIntLit :: Parser Lit
 pIntLit = IntLit <$> lexeme L.decimal
 
+pFloatLit :: Parser Lit
+pFloatLit = FloatLit <$> lexeme (try L.float)
+
 pCharLit :: Parser Lit
 pCharLit = CharLit <$> lexeme (between (char '\'') (char '\'') L.charLiteral)
 
@@ -51,7 +54,7 @@ pStringLit :: Parser Lit
 pStringLit = StringLit . T.pack <$> lexeme (char '"' *> manyTill L.charLiteral (char '"'))
 
 pLit :: Parser Lit
-pLit = pCharLit <|> pStringLit <|> pIntLit
+pLit = pCharLit <|> pStringLit <|> pFloatLit <|> pIntLit
 
 -- Name parsers
 

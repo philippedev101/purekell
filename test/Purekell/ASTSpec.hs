@@ -25,6 +25,7 @@ spec = do
       it "generates valid literals" $ property $ \lit ->
         case lit of
           IntLit n -> n >= 0
+          FloatLit d -> d >= 0 && not (isNaN d) && not (isInfinite d)
           StringLit _ -> True
           CharLit _ -> True
 

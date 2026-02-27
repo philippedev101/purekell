@@ -123,6 +123,7 @@ printStmt t (StmtLet bindings) =
 
 printLit :: Lit -> Text
 printLit (IntLit n) = T.pack (show n)
+printLit (FloatLit d) = T.pack (show d)
 printLit (StringLit s) = "\"" <> escapeString s <> "\""
 printLit (CharLit c) = "'" <> escapeChar c <> "'"
 
