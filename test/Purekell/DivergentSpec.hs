@@ -70,6 +70,30 @@ spec = do
         it "Haskell parses (a, b, c) as Tuple" $ do
           runParse haskellExpr "(a, b, c)" `shouldBe` Right ast
 
+      describe "4-tuple" $ do
+        let ast = Tuple [Var (Name "a"), Var (Name "b"), Var (Name "c"), Var (Name "d")]
+
+        it "Haskell prints as (a, b, c, d)" $ do
+          runPrint haskellExpr ast `shouldBe` "(a, b, c, d)"
+
+        it "PureScript prints as nested Tuple" $ do
+          runPrint purescriptExpr ast `shouldBe` "Tuple a (Tuple b (Tuple c d))"
+
+        it "Haskell roundtrips" $ do
+          runParse haskellExpr "(a, b, c, d)" `shouldBe` Right ast
+
+      describe "5-tuple" $ do
+        let ast = Tuple [Var (Name "a"), Var (Name "b"), Var (Name "c"), Var (Name "d"), Var (Name "e")]
+
+        it "Haskell prints as (a, b, c, d, e)" $ do
+          runPrint haskellExpr ast `shouldBe` "(a, b, c, d, e)"
+
+        it "PureScript prints as nested Tuple" $ do
+          runPrint purescriptExpr ast `shouldBe` "Tuple a (Tuple b (Tuple c (Tuple d e)))"
+
+        it "Haskell roundtrips" $ do
+          runParse haskellExpr "(a, b, c, d, e)" `shouldBe` Right ast
+
     describe "Tuple patterns" $ do
       describe "Pair pattern" $ do
         let ast = TuplePat [VarPat (Name "x"), VarPat (Name "y")]
@@ -94,6 +118,18 @@ spec = do
 
         it "Haskell parses (x, y, z) as TuplePat" $ do
           runParse haskellPat "(x, y, z)" `shouldBe` Right ast
+
+      describe "4-tuple pattern" $ do
+        let ast = TuplePat [VarPat (Name "a"), VarPat (Name "b"), VarPat (Name "c"), VarPat (Name "d")]
+
+        it "Haskell prints as (a, b, c, d)" $ do
+          runPrint haskellPat ast `shouldBe` "(a, b, c, d)"
+
+        it "PureScript prints as nested Tuple" $ do
+          runPrint purescriptPat ast `shouldBe` "Tuple a (Tuple b (Tuple c d))"
+
+        it "Haskell roundtrips" $ do
+          runParse haskellPat "(a, b, c, d)" `shouldBe` Right ast
 
     describe "Nested tuple expressions" $ do
       describe "Tuple as first element" $ do
