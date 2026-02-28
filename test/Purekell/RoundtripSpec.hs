@@ -903,3 +903,155 @@ spec = do
         runParse haskellExpr "Data.Map.insert k v Data.Map.empty" `shouldBe`
           Right (App (App (App (QVar [Name "Data", Name "Map"] (Name "insert")) (Var (Name "k"))) (Var (Name "v")))
             (QVar [Name "Data", Name "Map"] (Name "empty")))
+
+    describe "Backtick operators" $ do
+      it "parses x `div` y" $
+        runParse haskellExpr "x `div` y" `shouldBe`
+          Right (InfixApp (Var (Name "x")) (Name "div") (Var (Name "y")))
+
+      it "parses a `mod` b `div` c (left-associative)" $
+        runParse haskellExpr "a `mod` b `div` c" `shouldBe`
+          Right (InfixApp
+            (InfixApp (Var (Name "a")) (Name "mod") (Var (Name "b")))
+            (Name "div")
+            (Var (Name "c")))
+
+      it "parses (`div` 2) as RightSection" $
+        runParse haskellExpr "(`div` 2)" `shouldBe`
+          Right (RightSection (Name "div") (Literal (IntLit 2)))
+
+      it "parses (10 `div`) as LeftSection" $
+        runParse haskellExpr "(10 `div`)" `shouldBe`
+          Right (LeftSection (Literal (IntLit 10)) (Name "div"))
+
+      it "prints InfixApp with alphanumeric op using backticks" $
+        runPrint haskellExpr (InfixApp (Var (Name "x")) (Name "div") (Var (Name "y")))
+          `shouldBe` "x `div` y"
+
+      it "prints RightSection with backtick" $
+        runPrint haskellExpr (RightSection (Name "div") (Literal (IntLit 2)))
+          `shouldBe` "(`div` 2)"
+
+      it "prints LeftSection with backtick" $
+        runPrint haskellExpr (LeftSection (Literal (IntLit 10)) (Name "div"))
+          `shouldBe` "(10 `div`)"
+
+      it "roundtrips x `div` y in Haskell" $
+        let ast = InfixApp (Var (Name "x")) (Name "div") (Var (Name "y"))
+        in roundtrip haskellExpr ast `shouldBe` Right ast
+
+      it "roundtrips x `div` y in PureScript" $
+        let ast = InfixApp (Var (Name "x")) (Name "div") (Var (Name "y"))
+        in roundtrip purescriptExpr ast `shouldBe` Right ast
+
+      it "roundtrips (`div` 2) in Haskell" $
+        let ast = RightSection (Name "div") (Literal (IntLit 2))
+        in roundtrip haskellExpr ast `shouldBe` Right ast
+
+      it "roundtrips (10 `div`) in Haskell" $
+        let ast = LeftSection (Literal (IntLit 10)) (Name "div")
+        in roundtrip haskellExpr ast `shouldBe` Right ast
+
+      it "cross-language roundtrip" $
+        let ast = InfixApp (Var (Name "x")) (Name "div") (Var (Name "y"))
+            hsText = runPrint haskellExpr ast
+        in case runParse purescriptExpr hsText of
+             Left err -> expectationFailure (show err)
+             Right psExpr ->
+               let psText = runPrint purescriptExpr psExpr
+               in runParse haskellExpr psText `shouldBe` Right ast
+
+      it "symbolic operators still work (regression)" $
+        let ast = InfixApp (Var (Name "x")) (Name "+") (Var (Name "y"))
+        in roundtrip haskellExpr ast `shouldBe` Right ast
+
+      it "backtick in application context: map (`div` 2) xs" $
+        runParse haskellExpr "map (`div` 2) xs" `shouldBe`
+          Right (App (App (Var (Name "map")) (RightSection (Name "div") (Literal (IntLit 2)))) (Var (Name "xs")))
+
+      it "backtick with function args: f x `div` g y" $
+        runParse haskellExpr "f x `div` g y" `shouldBe`
+          Right (InfixApp
+            (App (Var (Name "f")) (Var (Name "x")))
+            (Name "div")
+            (App (Var (Name "g")) (Var (Name "y"))))
+
+    describe "Function-style bindings" $ do
+      it "parses f x = x + 1 in where" $
+        runParse haskellExpr "y where { f x = x + 1 }" `shouldBe`
+          Right (Where (Var (Name "y"))
+            [Binding (VarPat (Name "f")) (Lam [VarPat (Name "x")]
+              (InfixApp (Var (Name "x")) (Name "+") (Literal (IntLit 1))))])
+
+      it "parses f x y = x + y in let" $
+        runParse haskellExpr "let { f x y = x + y } in f 1 2" `shouldBe`
+          Right (Let
+            [Binding (VarPat (Name "f")) (Lam [VarPat (Name "x"), VarPat (Name "y")]
+              (InfixApp (Var (Name "x")) (Name "+") (Var (Name "y"))))]
+            (App (App (Var (Name "f")) (Literal (IntLit 1))) (Literal (IntLit 2))))
+
+      it "simple binding still works" $
+        runParse haskellExpr "let { x = 1 } in x" `shouldBe`
+          Right (Let [Binding (VarPat (Name "x")) (Literal (IntLit 1))] (Var (Name "x")))
+
+      it "constructor binding still works" $
+        runParse haskellExpr "let { Just x = y } in x" `shouldBe`
+          Right (Let [Binding (ConPat (Name "Just") [VarPat (Name "x")]) (Var (Name "y"))] (Var (Name "x")))
+
+      it "wildcard binding still works" $
+        runParse haskellExpr "let { _ = x } in y" `shouldBe`
+          Right (Let [Binding WildPat (Var (Name "x"))] (Var (Name "y")))
+
+      it "prints function binding" $
+        runPrint haskellExpr (Where (Var (Name "y"))
+            [Binding (VarPat (Name "f")) (Lam [VarPat (Name "x")]
+              (InfixApp (Var (Name "x")) (Name "+") (Literal (IntLit 1))))])
+          `shouldBe` "y where { f x = x + 1 }"
+
+      it "prints multi-arg function binding" $
+        runPrint haskellExpr (Let
+            [Binding (VarPat (Name "f")) (Lam [VarPat (Name "x"), VarPat (Name "y")]
+              (InfixApp (Var (Name "x")) (Name "+") (Var (Name "y"))))]
+            (Var (Name "r")))
+          `shouldBe` "let { f x y = x + y } in r"
+
+      it "prints simple binding unchanged" $
+        runPrint haskellExpr (Let [Binding (VarPat (Name "x")) (Literal (IntLit 1))] (Var (Name "x")))
+          `shouldBe` "let { x = 1 } in x"
+
+      it "roundtrips function binding in Haskell" $
+        let ast = Where (Var (Name "y"))
+              [Binding (VarPat (Name "f")) (Lam [VarPat (Name "x")]
+                (InfixApp (Var (Name "x")) (Name "+") (Literal (IntLit 1))))]
+        in roundtrip haskellExpr ast `shouldBe` Right ast
+
+      it "roundtrips function binding in PureScript" $
+        let ast = Where (Var (Name "y"))
+              [Binding (VarPat (Name "f")) (Lam [VarPat (Name "x")]
+                (InfixApp (Var (Name "x")) (Name "+") (Literal (IntLit 1))))]
+        in roundtrip purescriptExpr ast `shouldBe` Right ast
+
+      it "cross-language roundtrip" $
+        let ast = Let
+              [Binding (VarPat (Name "f")) (Lam [VarPat (Name "x")] (Var (Name "x")))]
+              (App (Var (Name "f")) (Literal (IntLit 1)))
+            hsText = runPrint haskellExpr ast
+        in case runParse purescriptExpr hsText of
+             Left err -> expectationFailure (show err)
+             Right psExpr ->
+               let psText = runPrint purescriptExpr psExpr
+               in runParse haskellExpr psText `shouldBe` Right ast
+
+      it "function binding in do-let" $
+        runParse haskellExpr "do { let { f x = x + 1 }; f 2 }" `shouldBe`
+          Right (Do
+            [ StmtLet [Binding (VarPat (Name "f")) (Lam [VarPat (Name "x")]
+                (InfixApp (Var (Name "x")) (Name "+") (Literal (IntLit 1))))]
+            , StmtExpr (App (Var (Name "f")) (Literal (IntLit 2)))
+            ])
+
+      it "function binding with constructor pattern arg" $
+        runParse haskellExpr "let { f (Just x) = x } in f" `shouldBe`
+          Right (Let
+            [Binding (VarPat (Name "f")) (Lam [ConPat (Name "Just") [VarPat (Name "x")]] (Var (Name "x")))]
+            (Var (Name "f")))

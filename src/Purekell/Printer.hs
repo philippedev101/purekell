@@ -2,6 +2,7 @@
 
 module Purekell.Printer
   ( Target (..)
+  , printOp
   , printExpr
   , printLit
   , printPat
@@ -32,6 +33,15 @@ data Target = Haskell | PureScript
 printQual :: [Name] -> Text
 printQual ns = T.intercalate "." [m | Name m <- ns]
 
+-- Operator helper: wrap alphanumeric operators in backticks
+
+printOp :: Name -> Text
+printOp (Name n)
+  | T.all isSymChar n = n
+  | otherwise         = "`" <> n <> "`"
+  where
+    isSymChar c = c `elem` ("!#$%&*+./<=>?@\\^|-~:" :: [Char])
+
 -- Expression printer
 
 printExpr :: Target -> Expr -> Text
@@ -39,8 +49,8 @@ printExpr _ (Literal l) = printLit l
 printExpr _ (Var (Name n)) = n
 printExpr _ (Con (Name n)) = n
 printExpr t (App f x) = printAppFun t f <> " " <> printAtom t x
-printExpr t (InfixApp l (Name op) r) =
-  printInfixArg t l <> " " <> op <> " " <> printInfixArg t r
+printExpr t (InfixApp l op r) =
+  printInfixArg t l <> " " <> printOp op <> " " <> printInfixArg t r
 printExpr t (Lam pats body) =
   "\\" <> T.intercalate " " (map (printPatAtom t) pats) <> " -> " <> printExpr t body
 printExpr t (If c th el) =
@@ -69,8 +79,8 @@ printExpr PureScript (Tuple []) =
   error "Tuple must have at least 2 elements"
 printExpr _ (ListLit []) = "[]"
 printExpr t (ListLit es) = "[" <> T.intercalate ", " (map (printExpr t) es) <> "]"
-printExpr t (LeftSection e (Name op)) = "(" <> printInfixArg t e <> " " <> op <> ")"
-printExpr t (RightSection (Name op) e) = "(" <> op <> " " <> printInfixArg t e <> ")"
+printExpr t (LeftSection e op) = "(" <> printInfixArg t e <> " " <> printOp op <> ")"
+printExpr t (RightSection op e) = "(" <> printOp op <> " " <> printInfixArg t e <> ")"
 printExpr t (Where e bs) =
   printInfixLevel t e <> " where { " <> T.intercalate "; " (map (printBinding t) bs) <> " }"
 printExpr t (Ann e ty) =
@@ -158,6 +168,8 @@ printCaseAlt t (CaseAlt pat guards body) =
   printPat t pat <> printGuards t guards <> " -> " <> printExpr t body
 
 printBinding :: Target -> Binding -> Text
+printBinding t (Binding (VarPat name) (Lam pats body)) =
+  printPat t (VarPat name) <> " " <> T.intercalate " " (map (printPatAtom t) pats) <> " = " <> printExpr t body
 printBinding t (Binding pat body) = printPat t pat <> " = " <> printExpr t body
 
 printStmt :: Target -> Stmt -> Text

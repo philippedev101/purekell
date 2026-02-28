@@ -48,7 +48,8 @@ genQualifier = do
 -- | Generate a valid operator name
 genOperator :: Gen Name
 genOperator = Name <$> elements
-  ["==", "/=", "<", ">", "<=", ">=", "<>", "&&", "||", "+", "*"]
+  ["==", "/=", "<", ">", "<=", ">=", "<>", "&&", "||", "+", "*"
+  , "div", "mod", "elem", "seq"]
 
 instance Arbitrary Type where
   arbitrary = sized go

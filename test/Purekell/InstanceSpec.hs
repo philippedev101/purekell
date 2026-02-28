@@ -254,3 +254,19 @@ spec = do
       it "PureScript printMethodBody roundtrips" $ property $
         forAll (arbitrary `suchThat` noPsTuple) $ \eq ->
           parseMethodBody (printMethodBody PureScript [eq]) === Right [eq :: MethodEquation]
+
+    describe "Backtick operator in method body" $ do
+      it "method body with backtick operator" $ do
+        let input = "f x y = x `div` y"
+        case parseMethodBody input of
+          Left err -> expectationFailure (show err)
+          Right eqs -> do
+            printMethodBody Haskell eqs `shouldBe` input
+            printMethodBody PureScript eqs `shouldBe` input
+
+    describe "Function binding in method where" $ do
+      it "method body with where containing function binding" $ do
+        let input = "f x = g x where { g y = y + 1 }"
+        case parseMethodBody input of
+          Left err -> expectationFailure (show err)
+          Right eqs -> printMethodBody Haskell eqs `shouldBe` input

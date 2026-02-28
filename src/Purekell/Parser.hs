@@ -10,6 +10,7 @@ module Purekell.Parser
   , pLit
   , pLowerName
   , pUpperName
+  , pBacktickOp
   , pOperator
   , pFieldSep
   , pAtomPat
@@ -115,11 +116,21 @@ pQualifiedOrTyCon = lexeme $ do
     [one] -> pure (TyCon (Name one))
     _     -> pure (TyQCon (map Name (init allUpper)) (Name (last allUpper)))
 
-pOperator :: Parser Name
-pOperator = lexeme $ try $ do
+pBacktickOp :: Parser Name
+pBacktickOp = lexeme $ do
+  _ <- char '`'
+  n <- pRawLowerIdent <|> pRawUpperIdent
+  _ <- char '`'
+  pure (Name n)
+
+pSymbolicOp :: Parser Name
+pSymbolicOp = lexeme $ try $ do
   op <- some (oneOf ("!#$%&*+./<=>?@\\^|-~:" :: [Char]))
   let n = T.pack op
   if n `elem` ["->", "|", "<-", "=", "::"] then fail "reserved operator" else pure (Name n)
+
+pOperator :: Parser Name
+pOperator = pBacktickOp <|> pSymbolicOp
 
 -- Pattern parsers
 
@@ -230,10 +241,11 @@ mkExprParsers postfix = ExprParsers { epExpr = expr, epGuard = guard }
       , pList
       ]
     pList = ListLit <$> (symbol "[" *> expr `sepBy` symbol "," <* symbol "]")
-    pNonMinusOp = lexeme $ try $ do
+    pNonMinusSymOp = lexeme $ try $ do
       op <- some (oneOf ("!#$%&*+./<=>?@\\^|-~:" :: [Char]))
       let n = T.pack op
       if n `elem` ["->", "|", "<-", "=", "-", "::"] then fail "reserved/excluded operator" else pure (Name n)
+    pNonMinusOp = pBacktickOp <|> pNonMinusSymOp
     pParenOrTupleOrSection = do
       _ <- symbol "("
       choice
@@ -293,7 +305,14 @@ mkExprParsers postfix = ExprParsers { epExpr = expr, epGuard = guard }
     caseAlt = CaseAlt <$> pPat <*> many guard <*> (symbol "->" *> expr)
     caseE = Case <$> (keyword "case" *> expr <* keyword "of" <* symbol "{")
                  <*> (caseAlt `sepBy1` symbol ";" <* symbol "}")
-    binding = Binding <$> pPat <*> (symbol "=" *> expr)
+    binding = try funBinding <|> simpleBinding
+    funBinding = do
+      name <- pLowerName
+      pats <- some pAtomPat
+      _ <- symbol "="
+      body <- expr
+      pure (Binding (VarPat name) (Lam pats body))
+    simpleBinding = Binding <$> pPat <*> (symbol "=" *> expr)
     letE = Let <$> (keyword "let" *> symbol "{" *> binding `sepBy1` symbol ";" <* symbol "}")
                <*> (keyword "in" *> expr)
     stmtBind = StmtBind <$> pPat <*> (symbol "<-" *> expr)
