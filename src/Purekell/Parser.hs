@@ -11,6 +11,7 @@ module Purekell.Parser
   , pLowerName
   , pUpperName
   , pOperator
+  , pFieldSep
   , pAtomPat
   , pConPat
   , pPat
@@ -153,11 +154,23 @@ pParenOrTuplePat = do
     [] -> p
     _  -> TuplePat (p : rest)
 
+pRecordPatFields :: Parser [(Name, Pat)]
+pRecordPatFields = symbol "{" *> fieldPatAssign `sepBy1` symbol "," <* symbol "}"
+
+fieldPatAssign :: Parser (Name, Pat)
+fieldPatAssign = (,) <$> pLowerName <*> (pFieldSep *> pPat)
+
 pConPat :: Parser Pat
-pConPat = ConPat <$> pUpperName <*> many pAtomPat
+pConPat = do
+  name <- pUpperName
+  (RecordPat name <$> try pRecordPatFields) <|> (ConPat name <$> many pAtomPat)
 
 pConsOp :: Parser ()
 pConsOp = lexeme $ try $ () <$ char ':' <* notFollowedBy (oneOf ("!#$%&*+./<=>?@\\^|-~:" :: [Char]))
+
+pFieldSep :: Parser ()
+pFieldSep = () <$ symbol "="
+  <|> () <$ lexeme (try (char ':' <* notFollowedBy (oneOf ("!#$%&*+./<=>?@\\^|-~:" :: [Char]))))
 
 pPat :: Parser Pat
 pPat = do
@@ -250,7 +263,7 @@ mkExprParsers postfix = ExprParsers { epExpr = expr, epGuard = guard }
                , e' <$ symbol ")"
                ]
         ]
-    fieldAssign = (,) <$> pLowerName <*> (symbol "=" *> expr)
+    fieldAssign = (,) <$> pLowerName <*> (pFieldSep *> expr)
     postfixChain e = do
       e1 <- postfix e
       updates <- many (try (symbol "{" *> fieldAssign `sepBy1` symbol "," <* symbol "}"))

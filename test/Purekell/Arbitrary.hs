@@ -214,6 +214,10 @@ instance Arbitrary Pat where
             [ IntLit . getNonNegative <$> arbitrary
             , FloatLit <$> (getNonNegative <$> arbitrary) `suchThat` (\d -> not (isNaN d) && not (isInfinite d))
             ]
+        , do con <- Name <$> genUpperIdent
+             numFields <- choose (1, 2)
+             fields <- vectorOf numFields ((,) <$> (Name <$> genIdent) <*> go (n `div` (numFields + 1)))
+             pure (RecordPat con fields)
         ]
 
   shrink (ConPat n args) = [ConPat n (take i args) | i <- [0 .. length args - 1]]
@@ -223,6 +227,8 @@ instance Arbitrary Pat where
   shrink (ConsPat l r) = [l, r] ++ [ConsPat l' r | l' <- shrink l] ++ [ConsPat l r' | r' <- shrink r]
   shrink (AsPat _ p) = [p]
   shrink (NegLitPat l) = [LitPat l]
+  shrink (RecordPat n [(_, p)]) = [ConPat n [p]]
+  shrink (RecordPat n fields) = [RecordPat n (take i fields) | i <- [1 .. length fields - 1]]
   shrink _ = []
 
 -- | Check recursively that an expression tree contains no RecordAccess.
@@ -260,6 +266,7 @@ noRecordAccessPat (TuplePat ps) = all noRecordAccessPat ps
 noRecordAccessPat (ListPat ps) = all noRecordAccessPat ps
 noRecordAccessPat (ConsPat l r) = noRecordAccessPat l && noRecordAccessPat r
 noRecordAccessPat (AsPat _ p) = noRecordAccessPat p
+noRecordAccessPat (RecordPat _ fields) = all (noRecordAccessPat . snd) fields
 noRecordAccessPat _ = True
 
 -- | Check recursively that an expression tree contains no Tuple.
@@ -297,6 +304,7 @@ noTuplePat (ConPat _ args) = all noTuplePat args
 noTuplePat (ListPat ps) = all noTuplePat ps
 noTuplePat (ConsPat l r) = noTuplePat l && noTuplePat r
 noTuplePat (AsPat _ p) = noTuplePat p
+noTuplePat (RecordPat _ fields) = all (noTuplePat . snd) fields
 noTuplePat (NegLitPat _) = True
 noTuplePat _ = True
 
@@ -335,6 +343,7 @@ noConsPat (ConPat _ args) = all noConsPat args
 noConsPat (TuplePat ps) = all noConsPat ps
 noConsPat (ListPat ps) = all noConsPat ps
 noConsPat (AsPat _ p) = noConsPat p
+noConsPat (RecordPat _ fields) = all (noConsPat . snd) fields
 noConsPat (NegLitPat _) = True
 noConsPat _ = True
 

@@ -223,6 +223,21 @@ spec = do
             printMethodBody Haskell eqs `shouldBe` input
             printMethodBody PureScript eqs `shouldBe` input
 
+    describe "Record pattern in method" $ do
+      it "method with record pattern" $ do
+        let input = "f (Foo { bar = x }) = x"
+        case parseMethodBody input of
+          Left err -> expectationFailure (show err)
+          Right eqs -> do
+            printMethodBody Haskell eqs `shouldBe` input
+            printMethodBody PureScript eqs `shouldBe` "f (Foo { bar: x }) = x"
+
+      it "method with record construction" $ do
+        let eq = MethodEquation (Name "f") [VarPat (Name "x")] []
+                   (RecordUpdate (Con (Name "MkFoo")) [(Name "bar", Var (Name "x"))])
+        printMethodBody Haskell [eq] `shouldBe` "f x = MkFoo { bar = x }"
+        printMethodBody PureScript [eq] `shouldBe` "f x = MkFoo { bar: x }"
+
     describe "Roundtrip" $ do
       let noRA (MethodEquation _ _ gs body) =
             noRecordAccess body && all (\(Guard e) -> noRecordAccess e) gs

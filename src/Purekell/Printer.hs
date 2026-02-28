@@ -76,10 +76,19 @@ printExpr t (Where e bs) =
 printExpr t (Ann e ty) =
   printInfixLevel t e <> " :: " <> printType ty
 printExpr t (RecordUpdate e fields) =
-  printAtom t e <> " { " <> T.intercalate ", " (map printField fields) <> " }"
-  where printField (Name n, val) = n <> " = " <> printExpr t val
+  printAtom t e <> " { " <> T.intercalate ", " (map (printRecField t e) fields) <> " }"
 printExpr _ (QVar qual (Name n)) = printQual qual <> "." <> n
 printExpr _ (QCon qual (Name n)) = printQual qual <> "." <> n
+
+printRecField :: Target -> Expr -> (Name, Expr) -> Text
+printRecField t base (Name n, val)
+  | PureScript <- t, isConExpr base = n <> ": " <> printExpr t val
+  | otherwise                       = n <> " = " <> printExpr t val
+
+isConExpr :: Expr -> Bool
+isConExpr (Con _)    = True
+isConExpr (QCon _ _) = True
+isConExpr _          = False
 
 -- Parenthesization helpers
 
@@ -225,6 +234,10 @@ printPat Haskell (ConsPat l r) = printPatAtom Haskell l <> " : " <> printPat Has
 printPat PureScript (ConsPat l r) = "Cons " <> printPatAtom PureScript l <> " " <> printPatAtom PureScript r
 printPat t (AsPat (Name n) p) = n <> "@" <> printPatAtom t p
 printPat _ (NegLitPat l) = "-" <> printLit l
+printPat t (RecordPat (Name n) fields) =
+  n <> " { " <> T.intercalate ", " (map pf fields) <> " }"
+  where pf (Name fn, p) = fn <> sep <> printPat t p
+        sep = case t of { PureScript -> ": "; Haskell -> " = " }
 
 printPatAtom :: Target -> Pat -> Text
 printPatAtom t p@(ConPat _ (_:_)) = "(" <> printPat t p <> ")"
@@ -234,4 +247,5 @@ printPatAtom t p@(TuplePat _) = case t of
 printPatAtom t p@(ConsPat _ _) = "(" <> printPat t p <> ")"
 printPatAtom t p@(AsPat _ _) = "(" <> printPat t p <> ")"
 printPatAtom t p@(NegLitPat _) = "(" <> printPat t p <> ")"
+printPatAtom t p@(RecordPat _ _) = "(" <> printPat t p <> ")"
 printPatAtom t p = printPat t p

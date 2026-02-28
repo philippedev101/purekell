@@ -819,6 +819,62 @@ spec = do
         runParse haskellExpr "Foo.Bar { x = 1 }" `shouldBe`
           Right (RecordUpdate (QCon [Name "Foo"] (Name "Bar")) [(Name "x", Literal (IntLit 1))])
 
+    describe "Record patterns" $ do
+      it "parses Foo { bar = x }" $
+        runParse haskellPat "Foo { bar = x }" `shouldBe`
+          Right (RecordPat (Name "Foo") [(Name "bar", VarPat (Name "x"))])
+
+      it "parses Foo { bar: x } (colon separator)" $
+        runParse haskellPat "Foo { bar: x }" `shouldBe`
+          Right (RecordPat (Name "Foo") [(Name "bar", VarPat (Name "x"))])
+
+      it "parses MkFoo { bar: 1 } as RecordUpdate (colon in expression)" $
+        runParse haskellExpr "MkFoo { bar: 1 }" `shouldBe`
+          Right (RecordUpdate (Con (Name "MkFoo")) [(Name "bar", Literal (IntLit 1))])
+
+      it "multi-field record pattern roundtrips in Haskell" $
+        let ast = RecordPat (Name "Foo") [(Name "bar", VarPat (Name "x")), (Name "baz", VarPat (Name "y"))]
+        in roundtrip haskellPat ast `shouldBe` Right ast
+
+      it "record pattern inside parenthesized context" $
+        runParse haskellPat "(Foo { bar = x })" `shouldBe`
+          Right (RecordPat (Name "Foo") [(Name "bar", VarPat (Name "x"))])
+
+      it "record construction roundtrips in Haskell" $
+        let ast = RecordUpdate (Con (Name "MkFoo")) [(Name "bar", Literal (IntLit 1))]
+        in roundtrip haskellExpr ast `shouldBe` Right ast
+
+      it "record construction roundtrips in PureScript" $
+        let ast = RecordUpdate (Con (Name "MkFoo")) [(Name "bar", Literal (IntLit 1))]
+        in roundtrip purescriptExpr ast `shouldBe` Right ast
+
+      it "cross-language roundtrip for record construction" $
+        let ast = RecordUpdate (Con (Name "MkFoo")) [(Name "bar", Literal (IntLit 1))]
+            hsText = runPrint haskellExpr ast
+        in case runParse purescriptExpr hsText of
+             Left err -> expectationFailure (show err)
+             Right psExpr ->
+               let psText = runPrint purescriptExpr psExpr
+               in runParse haskellExpr psText `shouldBe` Right ast
+
+      it "cross-language roundtrip for record pattern" $
+        let ast = RecordPat (Name "Foo") [(Name "bar", VarPat (Name "x"))]
+            hsText = runPrint haskellPat ast
+        in case runParse purescriptPat hsText of
+             Left err -> expectationFailure (show err)
+             Right psPat ->
+               let psText = runPrint purescriptPat psPat
+               in runParse haskellPat psText `shouldBe` Right ast
+
+      it "RecordPat in case alt" $
+        runParse haskellExpr "case x of { Foo { bar = y } -> y }" `shouldBe`
+          Right (Case (Var (Name "x"))
+            [CaseAlt (RecordPat (Name "Foo") [(Name "bar", VarPat (Name "y"))]) [] (Var (Name "y"))])
+
+      it "QCon-based record construction roundtrips" $
+        let ast = RecordUpdate (QCon [Name "Data", Name "Foo"] (Name "MkBar")) [(Name "x", Literal (IntLit 1))]
+        in roundtrip haskellExpr ast `shouldBe` Right ast
+
       it "qualified type roundtrips: TyQCon" $
         let ast = Ann (Var (Name "x")) (TyQCon [Name "Data", Name "Map"] (Name "Map"))
         in roundtrip haskellExpr ast `shouldBe` Right ast

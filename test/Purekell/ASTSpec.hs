@@ -53,3 +53,17 @@ spec = do
           RecordUpdate {} -> True
           QVar {} -> True
           QCon {} -> True
+
+    describe "Arbitrary Pat" $ do
+      it "generates valid patterns including RecordPat" $ property $ \pat ->
+        case (pat :: Pat) of
+          VarPat {} -> True
+          ConPat {} -> True
+          LitPat {} -> True
+          WildPat -> True
+          TuplePat {} -> True
+          ListPat {} -> True
+          ConsPat {} -> True
+          AsPat {} -> True
+          NegLitPat {} -> True
+          RecordPat {} -> True

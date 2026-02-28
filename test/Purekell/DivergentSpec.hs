@@ -253,6 +253,79 @@ spec = do
           runParse purescriptPat psText `shouldBe`
             Right (ConPat (Name "Cons") [VarPat (Name "x"), VarPat (Name "xs")])
 
+    describe "Record construction" $ do
+      let ast = RecordUpdate (Con (Name "MkFoo")) [(Name "bar", Literal (IntLit 1))]
+
+      it "Haskell prints with = separator" $ do
+        runPrint haskellExpr ast `shouldBe` "MkFoo { bar = 1 }"
+
+      it "PureScript prints with : separator" $ do
+        runPrint purescriptExpr ast `shouldBe` "MkFoo { bar: 1 }"
+
+      it "Haskell roundtrips" $ do
+        runParse haskellExpr "MkFoo { bar = 1 }" `shouldBe` Right ast
+
+      it "PureScript roundtrips" $ do
+        runParse purescriptExpr "MkFoo { bar: 1 }" `shouldBe` Right ast
+
+      it "cross-language roundtrip" $ do
+        let hsText = runPrint haskellExpr ast
+        let psText = runPrint purescriptExpr ast
+        runParse purescriptExpr hsText `shouldBe` Right ast
+        runParse haskellExpr psText `shouldBe` Right ast
+
+    describe "Record construction with QCon" $ do
+      let ast = RecordUpdate (QCon [Name "Data", Name "Foo"] (Name "MkBar")) [(Name "x", Literal (IntLit 1))]
+
+      it "Haskell prints with = separator" $ do
+        runPrint haskellExpr ast `shouldBe` "Data.Foo.MkBar { x = 1 }"
+
+      it "PureScript prints with : separator" $ do
+        runPrint purescriptExpr ast `shouldBe` "Data.Foo.MkBar { x: 1 }"
+
+    describe "Record update (non-constructor base)" $ do
+      let ast = RecordUpdate (Var (Name "rec")) [(Name "bar", Literal (IntLit 1))]
+
+      it "Haskell prints with = separator" $ do
+        runPrint haskellExpr ast `shouldBe` "rec { bar = 1 }"
+
+      it "PureScript also prints with = separator" $ do
+        runPrint purescriptExpr ast `shouldBe` "rec { bar = 1 }"
+
+    describe "Record patterns" $ do
+      let ast = RecordPat (Name "Foo") [(Name "bar", VarPat (Name "x"))]
+
+      it "Haskell prints with = separator" $ do
+        runPrint haskellPat ast `shouldBe` "Foo { bar = x }"
+
+      it "PureScript prints with : separator" $ do
+        runPrint purescriptPat ast `shouldBe` "Foo { bar: x }"
+
+      it "Haskell roundtrips" $ do
+        runParse haskellPat "Foo { bar = x }" `shouldBe` Right ast
+
+      it "PureScript roundtrips" $ do
+        runParse purescriptPat "Foo { bar: x }" `shouldBe` Right ast
+
+      it "cross-language roundtrip" $ do
+        let hsText = runPrint haskellPat ast
+        let psText = runPrint purescriptPat ast
+        runParse purescriptPat hsText `shouldBe` Right ast
+        runParse haskellPat psText `shouldBe` Right ast
+
+    describe "Multi-field record pattern" $ do
+      let ast = RecordPat (Name "Foo") [(Name "bar", VarPat (Name "x")), (Name "baz", VarPat (Name "y"))]
+
+      it "Haskell prints with = separator" $ do
+        runPrint haskellPat ast `shouldBe` "Foo { bar = x, baz = y }"
+
+      it "PureScript prints with : separator" $ do
+        runPrint purescriptPat ast `shouldBe` "Foo { bar: x, baz: y }"
+
+      it "both roundtrip" $ do
+        runParse haskellPat "Foo { bar = x, baz = y }" `shouldBe` Right ast
+        runParse purescriptPat "Foo { bar: x, baz: y }" `shouldBe` Right ast
+
     describe "Tuple cross-language one-way translation" $ do
       it "HS Tuple -> PS text -> PS parse gives App/Con, not Tuple" $ do
         let ast = Tuple [Var (Name "a"), Var (Name "b")]

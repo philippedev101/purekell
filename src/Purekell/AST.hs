@@ -74,6 +74,7 @@ data Pat
   | ConsPat Pat Pat          -- ^ Cons pattern: x : xs (HS) / Cons x xs (PS)
   | AsPat Name Pat           -- ^ As-pattern: name@pat
   | NegLitPat Lit            -- ^ Negated literal pattern: -42, -3.14
+  | RecordPat Name [(Name, Pat)]  -- ^ Record pattern: Foo { bar = x, baz = y }
   deriving (Eq, Show, Generic)
 
 data Type
