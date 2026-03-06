@@ -43,7 +43,9 @@ packages:
 # extra-deps: []
 
 # Override default flag values for project packages and extra-deps
-# flags: {}
+flags:
+  purekell:
+    dev: true
 
 # Extra package databases containing global packages
 # extra-package-dbs: []

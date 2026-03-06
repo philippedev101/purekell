@@ -1,19 +1,35 @@
+-- | Megaparsec-based parsers for the shared expression grammar.
+--
+-- This module provides the building blocks for parsing both Haskell and
+-- PureScript expressions into the shared AST. The parsers are
+-- language-neutral — divergent syntax (like record dot-access) is handled
+-- by a postfix callback passed to 'mkExprParsers'.
+--
+-- Most users should use the codecs in "Purekell.Haskell" and
+-- "Purekell.PureScript" rather than these parsers directly.
 module Purekell.Parser
-  ( ExprParsers (..)
+  ( -- * Expression parser construction
+    ExprParsers (..)
   , mkExprParsers
+    -- * Lexer utilities
   , sc
   , lexeme
   , symbol
   , keyword
+    -- * Literal and name parsers
   , pLit
   , pLowerName
   , pUpperName
+    -- * Operator parsers
   , pBacktickOp
   , pOperator
+    -- * Field separator
   , pFieldSep
+    -- * Pattern parsers
   , pAtomPat
   , pConPat
   , pPat
+    -- * Type parser
   , pType
   ) where
 
@@ -28,15 +44,19 @@ import Purekell.AST
 
 type Parser = Parsec Void Text
 
+-- | Skip whitespace (spaces, tabs, newlines). No comment support.
 sc :: Parser ()
 sc = L.space space1 empty empty
 
+-- | Wrap a parser to consume trailing whitespace.
 lexeme :: Parser a -> Parser a
 lexeme = L.lexeme sc
 
+-- | Parse an exact symbol and consume trailing whitespace.
 symbol :: Text -> Parser Text
 symbol = L.symbol sc
 
+-- | Parse a keyword (must not be followed by identifier characters).
 keyword :: Text -> Parser ()
 keyword w = lexeme (string w *> notFollowedBy (alphaNumChar <|> char '_' <|> char '\''))
 
@@ -54,11 +74,18 @@ pCharLit = CharLit <$> lexeme (between (char '\'') (char '\'') L.charLiteral)
 pStringLit :: Parser Lit
 pStringLit = StringLit . T.pack <$> lexeme (char '"' *> manyTill L.charLiteral (char '"'))
 
+-- | Parse a literal: character, string, float, or integer.
+--
+-- Float is tried before integer to handle @3.14@ correctly.
 pLit :: Parser Lit
 pLit = pCharLit <|> pStringLit <|> pFloatLit <|> pIntLit
 
 -- Name parsers
 
+-- | Parse a lowercase identifier (variable or function name).
+--
+-- Rejects reserved words: @case@, @of@, @let@, @in@, @where@, @do@,
+-- @if@, @then@, @else@, @_@.
 pLowerName :: Parser Name
 pLowerName = lexeme $ try $ do
   c <- lowerChar <|> char '_'
@@ -68,6 +95,7 @@ pLowerName = lexeme $ try $ do
   where
     reserved = ["case", "of", "let", "in", "where", "do", "if", "then", "else", "_"]
 
+-- | Parse an uppercase identifier (constructor or module name).
 pUpperName :: Parser Name
 pUpperName = lexeme $ do
   c <- upperChar
@@ -93,6 +121,8 @@ pRawLowerIdent = try $ do
 
 -- Qualified name parsers
 
+-- | Parse a possibly-qualified name starting with uppercase.
+-- Returns 'Con', 'QCon', or 'QVar' depending on the structure.
 pQualifiedOrCon :: Parser Expr
 pQualifiedOrCon = lexeme $ do
   first <- pRawUpperIdent
@@ -105,6 +135,7 @@ pQualifiedOrCon = lexeme $ do
       [one] -> pure (Con (Name one))
       _     -> pure (QCon (map Name (init allUpper)) (Name (last allUpper)))
 
+-- | Parse a possibly-qualified type constructor.
 pQualifiedOrTyCon :: Parser Type
 pQualifiedOrTyCon = lexeme $ do
   first <- pRawUpperIdent
@@ -114,6 +145,7 @@ pQualifiedOrTyCon = lexeme $ do
     [one] -> pure (TyCon (Name one))
     _     -> pure (TyQCon (map Name (init allUpper)) (Name (last allUpper)))
 
+-- | Parse a backtick-quoted operator: @\`div\`@, @\`elem\`@.
 pBacktickOp :: Parser Name
 pBacktickOp = lexeme $ do
   _ <- char '`'
@@ -121,12 +153,16 @@ pBacktickOp = lexeme $ do
   _ <- char '`'
   pure (Name n)
 
+-- | Parse a symbolic operator: @+@, @>>=@, @<>@, etc.
+--
+-- Rejects reserved operators: @->@, @|@, @<-@, @=@, @::@.
 pSymbolicOp :: Parser Name
 pSymbolicOp = lexeme $ try $ do
   op <- some (oneOf ("!#$%&*+./<=>?@\\^|-~:" :: [Char]))
   let n = T.pack op
   if n `elem` ["->", "|", "<-", "=", "::"] then fail "reserved operator" else pure (Name n)
 
+-- | Parse an operator — either backtick-quoted or symbolic.
 pOperator :: Parser Name
 pOperator = pBacktickOp <|> pSymbolicOp
 
@@ -138,6 +174,11 @@ pPatMinus = () <$ lexeme (try (char '-' <* notFollowedBy (oneOf ("!#$%&*+./<=>?@
 pNumLit :: Parser Lit
 pNumLit = pFloatLit <|> pIntLit
 
+-- | Parse an atomic pattern (no infix operators, no constructor arguments).
+--
+-- Handles: negated literals, literals, wildcards, nullary constructors,
+-- as-patterns, variable patterns, parenthesized\/tuple patterns, and
+-- list patterns.
 pAtomPat :: Parser Pat
 pAtomPat = choice
   [ NegLitPat <$> (pPatMinus *> pNumLit)
@@ -169,6 +210,7 @@ pRecordPatFields = symbol "{" *> fieldPatAssign `sepBy1` symbol "," <* symbol "}
 fieldPatAssign :: Parser (Name, Pat)
 fieldPatAssign = (,) <$> pLowerName <*> (pFieldSep *> pPat)
 
+-- | Parse a constructor pattern, possibly with record fields or arguments.
 pConPat :: Parser Pat
 pConPat = do
   name <- pUpperName
@@ -177,10 +219,14 @@ pConPat = do
 pConsOp :: Parser ()
 pConsOp = lexeme $ try $ () <$ char ':' <* notFollowedBy (oneOf ("!#$%&*+./<=>?@\\^|-~:" :: [Char]))
 
+-- | Parse a record field separator: @=@ (Haskell-style) or @:@ (PureScript-style).
+--
+-- Accepts both styles so the parser is language-neutral.
 pFieldSep :: Parser ()
 pFieldSep = () <$ symbol "="
   <|> () <$ lexeme (try (char ':' <* notFollowedBy (oneOf ("!#$%&*+./<=>?@\\^|-~:" :: [Char]))))
 
+-- | Parse a full pattern, including cons patterns (@x : xs@).
 pPat :: Parser Pat
 pPat = do
   left <- pConPat <|> pAtomPat
@@ -191,6 +237,11 @@ pPat = do
 
 -- Type parsers
 
+-- | Parse a type expression.
+--
+-- Supports type constructors, type variables, type application,
+-- function arrows (@->@), qualified type constructors, and
+-- parenthesized types.
 pType :: Parser Type
 pType = pTyFun
 
@@ -220,14 +271,21 @@ pDoubleColon = () <$ lexeme (try (string "::" <* notFollowedBy (oneOf ("!#$%&*+.
 
 -- Expression parsers
 
+-- | The expression parsers produced by 'mkExprParsers'.
 data ExprParsers = ExprParsers
-  { epExpr  :: Parser Expr
-  , epGuard :: Parser Guard
+  { epExpr  :: Parser Expr   -- ^ Full expression parser
+  , epGuard :: Parser Guard  -- ^ Guard parser (@| condition@)
   }
 
--- | Build expression parsers. The postfix callback adds extra postfix
--- operations after each atom (identity for Haskell, dot-access chaining
--- for PureScript). It interleaves with record update parsing.
+-- | Build expression parsers with a language-specific postfix callback.
+--
+-- The postfix callback adds extra postfix operations after each atom.
+-- For Haskell, this is @'pure'@ (no postfix operations). For PureScript,
+-- this chains dot-accessed field names (@.field1.field2@).
+--
+-- This is the key extension point that makes the parser language-neutral:
+-- the entire expression grammar is shared, with only the postfix
+-- callback differing between languages.
 mkExprParsers :: (Expr -> Parser Expr) -> ExprParsers
 mkExprParsers postfix = ExprParsers { epExpr = expr, epGuard = guard }
   where
