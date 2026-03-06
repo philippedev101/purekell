@@ -72,10 +72,11 @@ tests:
     - -rtsopts
     - -with-rtsopts=-N
     - -Wno-unused-packages
+    build-tools:
+    - hspec-discover
     dependencies:
     - purekell
     - hspec
     - QuickCheck
-    - hspec-discover
 
 github: philippedev101/purekell

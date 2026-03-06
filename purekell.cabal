@@ -71,11 +71,12 @@ test-suite purekell-test
       LambdaCase
       OverloadedStrings
   ghc-options: -Weverything -Werror -Wno-unrecognised-warning-flags -Wno-missing-safe-haskell-mode -Wno-safe -Wno-unsafe -Wno-implicit-prelude -Wno-missing-import-lists -Wno-missing-local-signatures -Wno-missing-kind-signatures -Wno-missing-deriving-strategies -Wno-missing-export-lists -Wno-missing-role-annotations -Wno-prepositive-qualified-module -Wno-unticked-promoted-constructors -Wno-orphans -Wno-name-shadowing -Wno-unused-imports -Wno-monomorphism-restriction -Wno-type-defaults -Wno-deprecations -Wno-missed-specialisations -Wno-all-missed-specialisations -threaded -rtsopts -with-rtsopts=-N -Wno-unused-packages
+  build-tool-depends:
+      hspec-discover:hspec-discover
   build-depends:
       QuickCheck
     , base >=4.7 && <5
     , hspec
-    , hspec-discover
     , megaparsec >=9.0 && <9.8
     , purekell
     , text >=2.0 && <2.2
