@@ -26,6 +26,7 @@ dependencies:
 ghc-options:
 - -Weverything
 - -Werror
+- -Wno-unrecognised-warning-flags
 # Not useful for this project
 - -Wno-missing-safe-haskell-mode
 - -Wno-safe
