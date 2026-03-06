@@ -25,32 +25,30 @@ dependencies:
 
 ghc-options:
 - -Weverything
-- -Wno-deprecations
+- -Werror
+# Not useful for this project
+- -Wno-missing-safe-haskell-mode
+- -Wno-safe
+- -Wno-unsafe
+- -Wno-implicit-prelude
 - -Wno-missing-import-lists
 - -Wno-missing-local-signatures
-- -Wno-missing-safe-haskell-mode
-- -Wno-monomorphism-restriction
-- -Wno-prepositive-qualified-module
-- -Wno-safe
-- -Wno-type-defaults
-- -Wno-unsafe
-- -Wno-missing-export-lists
-- -Wno-orphans
-- -Wno-unused-imports
-- -Wno-name-shadowing
 - -Wno-missing-kind-signatures
 - -Wno-missing-deriving-strategies
+- -Wno-missing-export-lists
+- -Wno-missing-role-annotations
+- -Wno-prepositive-qualified-module
+- -Wno-unticked-promoted-constructors
+# Intentional in this codebase
+- -Wno-orphans
+- -Wno-name-shadowing
+- -Wno-unused-imports
+- -Wno-monomorphism-restriction
+- -Wno-type-defaults
+- -Wno-deprecations
+# Not actionable
 - -Wno-missed-specialisations
 - -Wno-all-missed-specialisations
-- -Wno-unticked-promoted-constructors
-- -Wno-missing-role-annotations
-- -Wno-implicit-prelude
-- -Werror=identities
-- -Werror=missing-methods
-- -Werror=incomplete-record-updates
-- -Werror=incomplete-patterns
-- -Werror=missing-fields
-- -Werror=ambiguous-fields
 
 library:
   source-dirs: src
@@ -72,6 +70,7 @@ tests:
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N
+    - -Wno-unused-packages
     dependencies:
     - purekell
     - hspec
