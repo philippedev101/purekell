@@ -8,4 +8,14 @@ and this project adheres to the
 
 ## Unreleased
 
-## 0.1.0.0 - YYYY-MM-DD
+## 0.1.0.0 - 2026-03-06
+
+### Added
+- Shared AST for Haskell and PureScript expressions, patterns, and types
+- Megaparsec-based parser with language-specific postfix (PS dot access)
+- Target-aware printer handling divergent syntax (tuples, cons, records, record access)
+- Codec abstraction pairing parsers with printers
+- Haskell and PureScript codec instances
+- Instance method equation parsing and printing
+- Backtick infix operators and function-style let/where bindings
+- 331 tests (unit + property-based roundtrip)

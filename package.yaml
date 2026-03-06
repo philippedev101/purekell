@@ -1,20 +1,21 @@
 name:                purekell
 version:             0.1.0.0
-homepage:            https://github.com/githubuser/purekell#readme
+synopsis:            Bidirectional Haskell/PureScript expression translator
+description:         Parses Haskell and PureScript expressions into a shared AST, then prints them back in either language with correct syntax. Handles divergent syntax like record access, tuples, cons patterns, and record field separators. Designed for translating typeclass instance method bodies.
 license:             Apache-2.0
-author:              Author name here
-maintainer:          example@example.com
-copyright:           2026 Author name here
-category:            Web
+author:              philippedev101
+maintainer:          philippedev101
+copyright:           2026 philippedev101
+category:            Language
 extra-source-files:
 - README.md
 - CHANGELOG.md
 
 dependencies:
 - base >= 4.7 && < 5
-- text
-- megaparsec
-- containers
+- text >= 2.0 && < 2.2
+- megaparsec >= 9.0 && < 9.8
+- containers >= 0.6 && < 0.8
 
 ghc-options:
 - -Wall
@@ -52,4 +53,4 @@ tests:
     - QuickCheck
     - hspec-discover
 
-github: githubuser/purekell
+github: philippedev101/purekell
