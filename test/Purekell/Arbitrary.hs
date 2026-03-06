@@ -1,6 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# OPTIONS_GHC -Wno-orphans #-}
-
 module Purekell.Arbitrary
   ( genIdent
   , genUpperIdent

@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module Purekell.Printer
   ( Target (..)
   , printOp

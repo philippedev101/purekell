@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module Purekell.Haskell
   ( haskellLit
   , haskellExpr

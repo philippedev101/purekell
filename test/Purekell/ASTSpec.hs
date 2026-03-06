@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module Purekell.ASTSpec (spec) where
 
 import qualified Data.Text as T

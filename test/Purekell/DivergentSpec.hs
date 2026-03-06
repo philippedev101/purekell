@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module Purekell.DivergentSpec (spec) where
 
 import Test.Hspec

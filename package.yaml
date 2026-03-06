@@ -11,21 +11,46 @@ extra-source-files:
 - README.md
 - CHANGELOG.md
 
+language: GHC2021
+
+default-extensions:
+- DerivingVia
+- LambdaCase
+- OverloadedStrings
+
 dependencies:
 - base >= 4.7 && < 5
 - text >= 2.0 && < 2.2
 - megaparsec >= 9.0 && < 9.8
-- containers >= 0.6 && < 0.8
 
 ghc-options:
-- -Wall
-- -Wcompat
-- -Widentities
-- -Wincomplete-record-updates
-- -Wincomplete-uni-patterns
-- -Wmissing-home-modules
-- -Wpartial-fields
-- -Wredundant-constraints
+- -Weverything
+- -Wno-deprecations
+- -Wno-missing-import-lists
+- -Wno-missing-local-signatures
+- -Wno-missing-safe-haskell-mode
+- -Wno-monomorphism-restriction
+- -Wno-prepositive-qualified-module
+- -Wno-safe
+- -Wno-type-defaults
+- -Wno-unsafe
+- -Wno-missing-export-lists
+- -Wno-orphans
+- -Wno-unused-imports
+- -Wno-name-shadowing
+- -Wno-missing-kind-signatures
+- -Wno-missing-deriving-strategies
+- -Wno-missed-specialisations
+- -Wno-all-missed-specialisations
+- -Wno-unticked-promoted-constructors
+- -Wno-missing-role-annotations
+- -Wno-implicit-prelude
+- -Werror=identities
+- -Werror=missing-methods
+- -Werror=incomplete-record-updates
+- -Werror=incomplete-patterns
+- -Werror=missing-fields
+- -Werror=ambiguous-fields
 
 library:
   source-dirs: src

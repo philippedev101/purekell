@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module Purekell.RoundtripSpec (spec) where
 
 import Test.Hspec

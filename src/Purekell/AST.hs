@@ -1,5 +1,3 @@
-{-# LANGUAGE DeriveGeneric #-}
-
 module Purekell.AST
   ( Name (..)
   , Lit (..)
